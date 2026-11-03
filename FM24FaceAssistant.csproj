@@ -4,7 +4,7 @@
     <ApplicationIcon>assistant.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <TargetFramework>net10.0-windows</TargetFramework>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>disable</ImplicitUsings>
@@ -19,7 +19,7 @@
     <Compile Remove="Tests/**/*.cs" />
     <Resource Include="assistant.ico" />
     <EmbeddedResource Include="Data/Names/nam_dict.txt;Data/Names/gender.csv" />
-    <Content Include="assistant.ico;download_ngregens.py;start_library_worker.ps1;THIRD-PARTY-NOTICES.md"
+    <Content Include="assistant.ico;download_ngregens.py;start_library_worker.ps1;README.md;LICENSE;THIRD-PARTY-NOTICES.md"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="Data/Names/LICENSE.txt;Data/Names/GNU_DOC.TXT;Data/Names/NOTICE;Data/Names/README.md"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

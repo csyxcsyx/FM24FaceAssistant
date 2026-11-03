@@ -1,4 +1,4 @@
-﻿using FM24FaceAssistant;
+using FM24FaceAssistant;
 using System.IO;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -45,7 +45,7 @@ var root=Path.Combine(Path.GetTempPath(),"FM24FaceAssistant-test-"+Guid.NewGuid(
   bool blocked=false;try{writer.Apply(graphics,"B",rows,Catalog.Scan(graphics,CancellationToken.None));}catch(IOException){blocked=true;}Check(blocked,"阻止不同存档混写");writer.Deactivate(graphics);Check(File.ReadAllText(config)==original,"停用补丁恢复原始配置");
   writer.Apply(graphics,"B",rows,Catalog.Scan(graphics,CancellationToken.None));File.AppendAllText(config,"<!-- external change -->");blocked=false;try{writer.Undo("头像补丁");}catch(IOException){blocked=true;}Check(blocked,"外部修改后的恢复冲突保护");
   using(var store=new Storage(Path.Combine(root,"db"))){store.Save("A",rows);store.SavePeople("A",new(){p});Check(store.Load("A").Count==1&&store.Load("B").Count==0&&store.People("A").Single()==p,"SQLite 存档隔离与持久化");}
-  var skin=Path.Combine(root,"skin");Directory.CreateDirectory(Path.Combine(skin,"panels","client_object"));Directory.CreateDirectory(Path.Combine(skin,"panels","background_selector"));var toolbar=Path.Combine(skin,"panels","client_object","client object browser.xml");var originalToolbar="<panel><container><widget class=\"menubar_icon_button\" id=\"bgs2\" /></container></panel>";File.WriteAllText(toolbar,originalToolbar);var popup=Path.Combine(skin,"panels","background_selector","workings.xml");File.WriteAllText(popup,"<panel><container /></panel>");writer=new PatchWriter(Path.Combine(root,"skinstate"));Integration.Skin(skin,writer);var tool=XDocument.Load(toolbar).Descendants("widget").ToArray();Check((string?)tool[0].Attribute("id")=="F24A"&&(string?)tool[1].Attribute("id")=="bgs2","皮肤入口位于背景按钮左侧");writer.Undo("皮肤入口");Check(File.ReadAllText(toolbar)==originalToolbar&&File.ReadAllText(popup)=="<panel><container /></panel>","皮肤入口完整恢复");
+  var skin=Path.Combine(root,"skin");Directory.CreateDirectory(Path.Combine(skin,"panels","client_object"));Directory.CreateDirectory(Path.Combine(skin,"panels","background_selector"));var toolbar=Path.Combine(skin,"panels","client_object","client object browser.xml");var originalToolbar="<panel><container><widget class=\"menubar_icon_button\" id=\"bgs2\" /></container></panel>";File.WriteAllText(toolbar,originalToolbar);var popup=Path.Combine(skin,"panels","background_selector","workings.xml");File.WriteAllText(popup,"<panel><container /></panel>");writer=new PatchWriter(Path.Combine(root,"skinstate"));SkinEntry.Install(skin,writer);var tool=XDocument.Load(toolbar).Descendants("widget").ToArray();Check((string?)tool[0].Attribute("id")=="F24A"&&(string?)tool[1].Attribute("id")=="bgs2","皮肤入口位于背景按钮左侧");writer.Undo("皮肤入口");Check(File.ReadAllText(toolbar)==originalToolbar&&File.ReadAllText(popup)=="<panel><container /></panel>","皮肤入口完整恢复");
   var visual=Catalog.PixelDigest(image);var alias=f with{Hash="different-encoding",VisualHash=visual};var canonical=f with{VisualHash=visual};var other=f with{Hash="other-content",VisualHash="another-visual"};
   var unique=matcher.Assign(new[]{p,p with{Id=124}},new(){canonical,alias,other},new(),new List<Mapping>(),out _);Check(unique.Select(a=>a.Face.UniqueKey).Distinct().Count()==2,"同像素不同文件不占用额外头像名额");
   var legacy=matcher.Assign(new[]{p,p with{Id=124}},new(){canonical,alias,other},new(){new(p,f,true,"旧分配")},new List<Mapping>(),out _);Check(legacy.Select(a=>a.Face.UniqueKey).Distinct().Count()==2,"旧分配迁移到像素去重键");
@@ -70,6 +70,7 @@ var root=Path.Combine(Path.GetTempPath(),"FM24FaceAssistant-test-"+Guid.NewGuid(
   BatchUiChecks.Run(Check,p,f);
   SkinPackageChecks.Run(Check,root);
   RepairIntegrationChecks.Run(Check,p,f,root);
+  PortraitPreviewChecks.Run(Check,p,f,root);
   Check(Integration.ParseKey("Ctrl+Alt+F")== (3u,70u),"快捷键解析");Console.WriteLine($"{checks} checks passed. Temporary artifacts: {root}");return 0;
  }catch(Exception e){Console.Error.WriteLine(e);return 1;}}
 }

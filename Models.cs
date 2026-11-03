@@ -24,6 +24,7 @@ public record Face(string Path, string Group, string Kind, string Gender, string
 }
 public static class PersonSearch
 {
+    public static string[] PreviewKeys(Person person,string query) => RequestedKeys(person,query) ?? person.Keys.ToArray();
     public static string[]? RequestedKeys(Person person,string query)
     {
         query=query.Trim();return query.StartsWith("r-",StringComparison.OrdinalIgnoreCase)&&long.TryParse(query[2..],out var id)&&id==person.Id?new[]{"r-"+person.Id}:null;

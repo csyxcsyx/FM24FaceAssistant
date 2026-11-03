@@ -18,7 +18,7 @@ Tests/__pycache__/
 *.tmp
 .env
 release-pending/
-maintenance/source-before-polish.zip
+# 旧皮肤备份仅保留在本机。
 maintenance/legacy-skins/
 打开头像助手.cmd
 查看下载进度.cmd

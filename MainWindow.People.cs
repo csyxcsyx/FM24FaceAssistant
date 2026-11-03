@@ -1,19 +1,13 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Interop;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Microsoft.Win32;
-using Forms = System.Windows.Forms;
 
 namespace FM24FaceAssistant;
 
@@ -31,7 +25,50 @@ public partial class MainWindow
     int portraitVersion; CancellationTokenSource? portraitCancel;
     List<Assignment>? usageSource;Dictionary<string,int> usageCache=new();
     Dictionary<string,int> PortraitUsage(){if(!ReferenceEquals(usageSource,assigned)){usageSource=assigned;usageCache=assigned.GroupBy(a=>a.Face.UniqueKey).ToDictionary(g=>g.Key,g=>g.Count());}return usageCache;}
-    async void PersonSelected(object sender, SelectionChangedEventArgs e) { var selectionVersion=++portraitVersion;portraitCancel?.Cancel();portraitCancel?.Dispose();portraitCancel=new();var selectionToken=portraitCancel.Token; if (PeopleList.SelectedItem is not Person p) { pending=null;recommended=null;PendingImage.Source=CurrentImage.Source=null;PersonTitle.Text="没有匹配人物";PersonInfo.ItemsSource=MatchInfo.ItemsSource=null;GalleryRegion.Text="";GenderHelp.Visibility=Visibility.Collapsed;Gallery.ItemsSource=Array.Empty<Face>();PageLabel.Text="0 / 0";return; } settings.LastPersonId=p.Id; recommended=null; seenPreviews.Clear(); pending = null; PendingImage.Source = null; PersonTitle.Text = p.Name; var gender=NameGender.Resolve(p); var genderLabel=gender.Gender+(gender.Source=="姓名推断"?"（推断）":gender.Source=="默认男性"?"（默认）":""); PersonInfo.ItemsSource=new[]{"ID "+(PersonSearch.RequestedKeys(p,Search.Text)?.Single()??p.Key),p.Kind,genderLabel,CountryNames.English(p.Nation)}; GenderHelp.Visibility=p.Kind=="职员"?Visibility.Visible:Visibility.Collapsed; GenderHelp.ToolTip=$"头像匹配：{gender.Gender}（{gender.Source}）\n{gender.Detail}"; var wantedKeys=PersonSearch.RequestedKeys(p,Search.Text)??p.Keys.ToArray(); var a = assigned.FirstOrDefault(x => x.Person.Identity == p.Identity && x.OutputKeys.Intersect(wantedKeys).Any()); var path = PersonSearch.Portrait(p,wantedKeys.Take(1),assigned,mappings); CurrentImage.Source = Bitmap(path); MatchInfo.ItemsSource=new[]{(a?.Reason??"选择候选头像后应用").Replace(" · ","；")}; LockFace.IsChecked = a?.Locked ?? true; page = 0; UpdateGallery(); if(path==null){try{var external=await QueryMappings(wantedKeys.Select(k=>$"graphics/pictures/person/{k}/portrait"),selectionToken,true);if(selectionVersion==portraitVersion&&(PeopleList.SelectedItem as Person)?.Identity==p.Identity)CurrentImage.Source=Bitmap(PersonSearch.Portrait(p,wantedKeys,assigned,external));}catch(OperationCanceledException){}catch(Exception ex){if(selectionVersion==portraitVersion)Report("当前头像读取失败："+ex.Message);}} }
+    async void PersonSelected(object sender, SelectionChangedEventArgs e)
+    {
+        var selectionVersion=++portraitVersion;
+        portraitCancel?.Cancel();portraitCancel?.Dispose();portraitCancel=new();
+        var selectionToken=portraitCancel.Token;
+        if(PeopleList.SelectedItem is not Person p){
+            pending=null;recommended=null;PendingImage.Source=CurrentImage.Source=null;
+            PersonTitle.Text="没有匹配人物";PersonInfo.ItemsSource=MatchInfo.ItemsSource=null;
+            GalleryRegion.Text="";GenderHelp.Visibility=Visibility.Collapsed;
+            Gallery.ItemsSource=Array.Empty<Face>();PageLabel.Text="0 / 0";return;
+        }
+        settings.LastPersonId=p.Id;recommended=null;seenPreviews.Clear();pending=null;
+        PendingImage.Source=null;PersonTitle.Text=p.Name;
+        var gender=NameGender.Resolve(p);
+        var genderLabel=gender.Gender+(gender.Source=="姓名推断"?"（推断）":gender.Source=="默认男性"?"（默认）":"");
+        var keys=PersonSearch.PreviewKeys(p,Search.Text);var key=keys[0];
+        PersonInfo.ItemsSource=new[]{"ID "+key,p.Kind,genderLabel,CountryNames.English(p.Nation)};
+        GenderHelp.Visibility=p.Kind=="职员"?Visibility.Visible:Visibility.Collapsed;
+        GenderHelp.ToolTip=$"头像匹配：{gender.Gender}（{gender.Source}）\n{gender.Detail}";
+        var a=assigned.FirstOrDefault(x=>x.Person.Identity==p.Identity&&x.OutputKeys.Contains(key));
+        // Resolve the primary ID before considering the compatibility r-portrait.
+        // A missing/stale index is not evidence that the primary portrait is absent.
+        CurrentImage.Source=Bitmap(a?.Face.Path);
+        MatchInfo.ItemsSource=new[]{(a?.Reason??"选择候选头像后应用").Replace(" · ","；")};
+        LockFace.IsChecked=a?.Locked??true;page=0;UpdateGallery();
+        if(a==null){
+            try{
+                var external=await QueryMappings(keys.Select(k=>$"graphics/pictures/person/{k}/portrait"),selectionToken,true);
+                if(selectionVersion==portraitVersion&&(PeopleList.SelectedItem as Person)?.Identity==p.Identity){
+                    var resolved=keys.Select(k=>(Key:k,Path:PersonSearch.Portrait(p,new[]{k},assigned,external))).FirstOrDefault(x=>x.Path!=null);
+                    CurrentImage.Source=Bitmap(resolved.Path);
+                    if(resolved.Path!=null&&resolved.Key!=key){
+                        PersonInfo.ItemsSource=new[]{"ID "+resolved.Key,p.Kind,genderLabel,CountryNames.English(p.Nation)};
+                        if(pending==null){
+                            var fallback=assigned.FirstOrDefault(x=>x.Person.Identity==p.Identity&&x.OutputKeys.Contains(resolved.Key));
+                            MatchInfo.ItemsSource=new[]{(fallback?.Reason??"选择候选头像后应用").Replace(" · ","；")};
+                            LockFace.IsChecked=fallback?.Locked??true;
+                        }
+                    }
+                }
+            }catch(OperationCanceledException){}
+            catch(Exception ex){if(selectionVersion==portraitVersion)Report("当前头像读取失败："+ex.Message);}
+        }
+    }
     static BitmapImage? Bitmap(string? path)=>PortraitImageCache.Load(path);
     List<Face>? recommended; const int pageSize=14;
     List<Face> Candidates() {var p=PeopleList.SelectedItem as Person;if(p==null)return new();if(recommended==null){recommended=(AllFaces.IsChecked==true?faces.Where(f=>f.Kind==p.Kind&&(p.Kind=="职员"||f.Gender=="男")).DistinctBy(f=>f.UniqueKey).ToList():RegionResolver.Available(p,faces,PortraitUsage()));}var q=GroupFilter.Text.Trim();return q.Length==0?recommended:recommended.Where(f=>GroupFilter.SelectedValue is string exactGroup?f.Group.Equals(exactGroup,StringComparison.OrdinalIgnoreCase):PickerOption.GroupMatches(f.Group,q)).ToList();}

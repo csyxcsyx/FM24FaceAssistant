@@ -10,6 +10,7 @@ public sealed class MappingIndex : IDisposable
 {
     readonly string root; readonly FileSystemWatcher watcher; bool discover=true;
     readonly Dictionary<string,string> versions=new(StringComparer.OrdinalIgnoreCase); List<string> files=new(); List<Mapping>? snapshot;
+    readonly Dictionary<string,(string Version,List<Mapping> Rows)> previews=new(StringComparer.OrdinalIgnoreCase);
     public MappingIndex(string root){this.root=root;Directory.CreateDirectory(root);watcher=new(root,"config.xml"){IncludeSubdirectories=true,EnableRaisingEvents=true};watcher.Created+=(_,e)=>{if(!Own(e.FullPath))discover=true;};watcher.Deleted+=(_,e)=>{if(!Own(e.FullPath))discover=true;};watcher.Renamed+=(_,e)=>{if(!Own(e.FullPath))discover=true;};watcher.Error+=(_,_)=>discover=true;}
     bool Own(string path)=>Path.GetRelativePath(root,path).Split(Path.DirectorySeparatorChar)[0].Equals("FM24FaceAssistant",StringComparison.OrdinalIgnoreCase);
     public List<Mapping> Read(CancellationToken ct,Action<string> progress,bool rebuild=false)
@@ -43,11 +44,42 @@ public sealed class MappingIndex : IDisposable
     }
     public List<Mapping> Find(IEnumerable<string> targets,CancellationToken ct,Action<string> progress,bool allowBuild=true,IProgress<TaskProgress>? taskProgress=null)
     {
+        SQLitePCL.Batteries_V2.Init();
         bool ready=true;using(var db=new SqliteConnection($"Data Source={Path.Combine(Files.State,"mapping-index.db")}")){db.Open();try{using var cmd=db.CreateCommand();cmd.CommandText="SELECT c.path,c.version,p.version FROM configs c LEFT JOIN prepared p ON c.path=p.config";using var reader=cmd.ExecuteReader();var known=new HashSet<string>(StringComparer.OrdinalIgnoreCase);while(reader.Read()){ct.ThrowIfCancellationRequested();var path=reader.GetString(0);if(!path.StartsWith(root+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase))continue;known.Add(path);var info=new FileInfo(path);if(!info.Exists||reader.IsDBNull(2)||reader.GetString(1)!=reader.GetString(2)||reader.GetString(1)!=info.Length+":"+info.LastWriteTimeUtc.Ticks)ready=false;}if(discover){files=Discover(root,ct).ToList();discover=false;if(!known.SetEquals(files))ready=false;}if(known.Count==0)ready=false;}catch(SqliteException){ready=false;}}
-        if(!ready&&!allowBuild)return new();
+        if(!ready&&!allowBuild)return Preview(targets,ct);
         if(!ready)Read(ct,progress);
         var result=new List<Mapping>();using var connection=new SqliteConnection($"Data Source={Path.Combine(Files.State,"mapping-index.db")}");connection.Open();var targetArray=targets.Distinct().ToArray();int checkedTargets=0;foreach(var chunk in targetArray.Chunk(300)){taskProgress?.Report(new("检查头像映射",checkedTargets,targetArray.Length));checkedTargets+=chunk.Length;ct.ThrowIfCancellationRequested();using var cmd=connection.CreateCommand();var names=chunk.Select((_,i)=>"$p"+i).ToArray();cmd.CommandText="SELECT config,f,t,image,valid FROM targets WHERE t IN ("+string.Join(',',names)+")";for(int i=0;i<chunk.Length;i++)cmd.Parameters.AddWithValue(names[i],chunk[i]);using var reader=cmd.ExecuteReader();while(reader.Read()){var file=reader.GetString(0);if(file.StartsWith(root+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase)){var from=reader.GetString(1);var stem=Path.GetFullPath(Path.Combine(Path.GetDirectoryName(file)!,from.Replace('/',Path.DirectorySeparatorChar)));var image=new[]{stem+".png",stem+".jpg",stem+".jpeg",stem}.FirstOrDefault(File.Exists);result.Add(new(file,from,reader.GetString(2),image));}}}
         taskProgress?.Report(new("检查头像映射",targetArray.Length,targetArray.Length));return result;
+    }
+    List<Mapping> Preview(IEnumerable<string> targets,CancellationToken ct)
+    {
+        // A stale full index must not turn an existing portrait into a missing one.
+        // Read only the requested records; keep this cache separate from the full index.
+        if(discover){files=Discover(root,ct).ToList();discover=false;}
+        var version=string.Join("|",files.Select(file=>{ct.ThrowIfCancellationRequested();var info=new FileInfo(file);return file+":"+info.Length+":"+info.LastWriteTimeUtc.Ticks;}));
+        var requested=targets.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var missing=requested.Where(t=>!previews.TryGetValue(t,out var cached)||cached.Version!=version).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if(missing.Count>0){
+            var rows=missing.ToDictionary(t=>t,_=>new List<Mapping>(),StringComparer.OrdinalIgnoreCase);
+            foreach(var file in files){
+                ct.ThrowIfCancellationRequested();
+                using var reader=XmlReader.Create(file,new XmlReaderSettings{DtdProcessing=DtdProcessing.Ignore,XmlResolver=null});
+                while(reader.Read()){
+                    ct.ThrowIfCancellationRequested();
+                    if(reader.NodeType!=XmlNodeType.Element||reader.Name!="record"||reader.GetAttribute("to") is not string target||!missing.Contains(target))continue;
+                    var from=reader.GetAttribute("from")??"";
+                    rows[target].Add(new(file,from,target,null));
+                }
+            }
+            ct.ThrowIfCancellationRequested();
+            if(previews.Count+missing.Count>128)previews.Clear();
+            foreach(var (target,matches) in rows)previews[target]=(version,matches);
+        }
+        return requested.SelectMany(t=>previews[t].Rows).Select(m=>{
+            ct.ThrowIfCancellationRequested();
+            var stem=Path.GetFullPath(Path.Combine(Path.GetDirectoryName(m.Config)!,m.From.Replace('/',Path.DirectorySeparatorChar)));
+            return new Mapping(m.Config,m.From,m.Target,new[]{stem+".png",stem+".jpg",stem+".jpeg",stem}.FirstOrDefault(File.Exists));
+        }).ToList();
     }
     static IEnumerable<string> Discover(string root,CancellationToken ct){var pending=new Stack<string>();pending.Push(root);while(pending.Count>0){ct.ThrowIfCancellationRequested();var folder=pending.Pop();var config=Path.Combine(folder,"config.xml");if(File.Exists(config))yield return config;foreach(var sub in Directory.EnumerateDirectories(folder)){ct.ThrowIfCancellationRequested();if((File.GetAttributes(sub)&FileAttributes.ReparsePoint)==0&&!Path.GetRelativePath(root,sub).Split(Path.DirectorySeparatorChar)[0].Equals("FM24FaceAssistant",StringComparison.OrdinalIgnoreCase))pending.Push(sub);}}}
     public void Dispose()=>watcher.Dispose();
