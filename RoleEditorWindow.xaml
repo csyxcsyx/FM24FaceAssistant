@@ -1,0 +1,13 @@
+<Window x:Class="FM24FaceAssistant.RoleEditorWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:FM24FaceAssistant" Title="角色资料" Width="500" Height="370" MinWidth="460" MinHeight="350" ResizeMode="NoResize" WindowStartupLocation="CenterOwner" Background="#242137" Foreground="#F4F0F9" FontFamily="Microsoft YaHei UI" FontSize="13" Icon="assistant.ico" UseLayoutRounding="True" PreviewKeyDown="EditorKeyDown" Closing="EditorClosing">
+ <Grid Margin="22"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="16"/><RowDefinition/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <TextBlock x:Name="Heading" FontSize="21" FontWeight="SemiBold" Margin="3,0"/>
+  <Grid Grid.Row="2"><Grid.ColumnDefinitions><ColumnDefinition Width="100"/><ColumnDefinition/></Grid.ColumnDefinitions><Grid.RowDefinitions><RowDefinition Height="38"/><RowDefinition Height="38"/><RowDefinition Height="38"/><RowDefinition Height="38"/></Grid.RowDefinitions>
+   <TextBlock Text="英文姓名" VerticalAlignment="Center"/><TextBox x:Name="NameInput" Grid.Column="1" MaxLength="100" AutomationProperties.Name="英文姓名"/>
+   <TextBlock Grid.Row="1" Text="游戏 UID" VerticalAlignment="Center"/><TextBox x:Name="UidInput" Grid.Row="1" Grid.Column="1" MaxLength="24" AutomationProperties.Name="游戏 UID" ToolTip="已有角色的 UID 不可更改；不同编号请新建角色。"/>
+   <TextBlock Grid.Row="2" Text="职位" VerticalAlignment="Center"/><local:SearchPicker x:Name="Role" Grid.Row="2" Grid.Column="1" Placeholder="Select or enter role" ToolTip="可选择职位或输入自定义名称；只有主教练（我）唯一。"/>
+   <TextBlock Grid.Row="3" Text="推荐国籍" VerticalAlignment="Center"/><local:SearchPicker x:Name="Nation" Grid.Row="3" Grid.Column="1" Placeholder="Select nation" ToolTip="用于推荐头像，导入自己的图片时可留空。"/>
+  </Grid>
+  <TextBlock Grid.Row="3" x:Name="Error" Foreground="#F2B9AC" TextWrapping="Wrap" MinHeight="35" Margin="3,8" AutomationProperties.LiveSetting="Polite"/>
+  <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right"><Button Content="取消" Click="CancelEdit"/><Button x:Name="SaveButton" Content="创建角色" Click="SaveEdit" Background="#A87829" BorderBrush="#706582"/></StackPanel>
+ </Grid>
+</Window>

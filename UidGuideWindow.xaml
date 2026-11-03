@@ -1,0 +1,19 @@
+<Window x:Class="FM24FaceAssistant.UidGuideWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Background="#242137" Foreground="#F4F0F9" FontFamily="Microsoft YaHei UI" FontSize="14" Title="获取角色 UID" Icon="assistant.ico" Width="680" Height="470" MinWidth="600" MinHeight="440" WindowStartupLocation="CenterOwner" UseLayoutRounding="True" TextOptions.TextFormattingMode="Display" PreviewKeyDown="GuideKeyDown">
+ <Grid Margin="22"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <StackPanel Margin="0,0,0,14"><TextBlock Text="获取角色 UID" FontSize="23" FontWeight="SemiBold"/><TextBlock Text="使用 FLAYUS skin 24 YUXIANde 皮肤，在收件箱复制对应人物的编号。" Foreground="#BDB7D2" TextWrapping="Wrap"/></StackPanel>
+  <TabControl Grid.Row="1">
+   <TabItem Header="收件箱人物"><StackPanel Margin="18">
+    <TextBlock Text="新闻官、个人助理、经纪人、球员联络员" FontSize="16" FontWeight="SemiBold" Margin="3,0,3,14"/>
+    <TextBlock Text="1　游戏偏好设置中选择 FLAYUS skin 24 YUXIANde，并重载皮肤。" TextWrapping="Wrap" Margin="3,0,3,14"/>
+    <TextBlock Text="2　打开该人物发来的消息，在姓名、职位后找到 UID；右键编号，选择全选，再复制。" TextWrapping="Wrap" Margin="3,0,3,14"/>
+    <TextBlock Text="3　返回助手，点击新建角色，在弹窗的游戏 UID 中粘贴编号并保存，再选择头像应用。" TextWrapping="Wrap" Margin="3,0,3,14"/>
+   </StackPanel></TabItem>
+   <TabItem Header="主教练与常见问题"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel Margin="18">
+    <TextBlock Text="玩家主教练" FontSize="17" FontWeight="SemiBold"/><TextBlock Text="在 FM 偏好设置中启用显示 ID，打开自己的个人资料，复制标题栏中的 ID。普通数字和 r- 开头的编号均可识别。" TextWrapping="Wrap" Margin="3,8,3,20"/>
+    <TextBlock Text="主教练头像没有变化？" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="保留标题栏中的 r- 前缀。应用图片后，点击特殊角色页的“主教练头像设置”，按提示在 FM 偏好选择 → 概况 → 改变轮廓贴图中载入图片。玩家个人头像不能仅凭映射写入就判断已生效。" TextWrapping="Wrap" Margin="3,8,3,20"/>
+    <TextBlock Text="为什么同名也无法自动判断？" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="隐藏角色不一定在常规人物名单中，且编号随存档变化。请使用该人物自己的准确 UID，不能按姓名猜测编号。" TextWrapping="Wrap" Margin="3,8,3,20"/>
+   </StackPanel></ScrollViewer></TabItem>
+  </TabControl>
+  <Button Grid.Row="2" Content="关闭" Click="CloseGuide" MinWidth="90" HorizontalAlignment="Right" Margin="3,14,3,0"/>
+ </Grid>
+</Window>

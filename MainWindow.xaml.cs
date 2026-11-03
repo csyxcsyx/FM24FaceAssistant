@@ -1,0 +1,63 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Interop;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
+using Microsoft.Win32;
+using Forms = System.Windows.Forms;
+
+namespace FM24FaceAssistant;
+
+public partial class MainWindow : Window
+{
+    MappingIndex? mappingIndex; readonly Settings settings; readonly Storage storage; readonly PatchWriter writer; readonly Matcher matcher = new();
+    List<Person> people = new(); List<Face> faces = new(); List<Mapping> mappings = new(); List<Assignment> assigned = new(); List<Assignment>? batch; Face? pending; CancellationTokenSource? cancel; bool ready, exitAfterTask; int page; Forms.NotifyIcon? tray; DispatcherTimer timer = new(); IntPtr hwnd;
+    [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr h, int id, uint mods, uint key);
+    [DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr h, int id);
+    public MainWindow()
+    {
+        StartupDiagnostic(null);
+        settings = Files.Read<Settings>(Path.Combine(Files.State, "settings.json")) ?? new(); storage = new(Files.State); writer = new(Files.State); InitializeComponent(); SpecialView.Message+=Report; SpecialView.RoleChanged+=ManageSpecialRole; BatchView.PersonRequested+=InspectBatchPerson; MinWidth=Math.Min(1120,SystemParameters.WorkArea.Width);MinHeight=Math.Min(740,SystemParameters.WorkArea.Height);Width=Math.Clamp(settings.WindowWidth,MinWidth,SystemParameters.WorkArea.Width);Height=Math.Clamp(settings.WindowHeight,MinHeight,SystemParameters.WorkArea.Height); DocsPath.Text = settings.Documents; PackPath.Text = settings.Pack; ProfileName.Text = settings.Profile; HotkeyBox.Text = settings.Hotkey; RefreshBox.Text = settings.RefreshKey; SkinPath.Text = string.IsNullOrWhiteSpace(settings.Skin) ? Path.Combine(settings.Documents, "skins", "FLAYUS skin 24 YUXIANde") : settings.Skin; BatchView.AutomaticCheck.IsChecked = settings.Auto; ShowSkinEntry.IsChecked=settings.ShowSkinEntry; SkinPromptCheck.IsChecked=!settings.SkipSkinInstallPrompt; ready = true;
+        SourceInitialized += (_, _) => { hwnd = new WindowInteropHelper(this).Handle; WindowTheme.Apply(hwnd); HwndSource.FromHwnd(hwnd).AddHook(Hook); try { SetHotkey(); } catch (Exception e) { Report(e.Message); } };
+        tray = new Forms.NotifyIcon { Icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? System.Drawing.SystemIcons.Application, Text = "FM24 头像助手", Visible = true }; tray.DoubleClick += (_, _) => Dispatcher.Invoke(Reveal); var menu = new Forms.ContextMenuStrip(); menu.Items.Add("打开头像助手", null, (_, _) => Dispatcher.Invoke(Reveal)); menu.Items.Add("退出", null, (_, _) => Dispatcher.Invoke(() => { Close(); })); tray.ContextMenuStrip = menu;
+        timer.Interval = TimeSpan.FromSeconds(2); timer.Tick += AutoTick; timer.Start(); Closing += OnClosing;
+    }
+    void LoadProfile() { people = storage.People(settings.Profile); assigned = Files.Read<List<Assignment>>(Path.Combine(Files.State, "rows-" + Files.Hash(settings.Profile) + ".json")) ?? new(); storage.Save(settings.Profile, assigned); InvalidateBatch(); UpdatePeople(); }
+    public void Reveal() { Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; WindowActivation.Record("reveal",Activate()); }
+    void OnClosing(object? sender,CancelEventArgs e){if(cancel!=null){e.Cancel=true;exitAfterTask=true;cancel.Cancel();Report("正在取消任务，完成后退出…");return;}settings.WindowWidth=RestoreBounds.Width;settings.WindowHeight=RestoreBounds.Height;Persist();timer.Stop();searchTimer.Stop();portraitCancel?.Cancel();portraitCancel?.Dispose();mappingIndex?.Dispose();tray?.Dispose();UnregisterHotKey(hwnd,24);storage.Dispose();Application.Current.Shutdown();}
+    IntPtr Hook(IntPtr h, int msg, IntPtr w, IntPtr l, ref bool handled) { if (msg == 0x312 && w.ToInt32() == 24) { Reveal(); handled = true; } return IntPtr.Zero; }
+    void SetHotkey() { var (m, k) = Integration.ParseKey(settings.Hotkey); UnregisterHotKey(hwnd, 24); if (!RegisterHotKey(hwnd, 24, m | 0x4000, k)) throw new IOException("唤出快捷键已被占用，请更换后保存。"); }
+    IProgress<TaskProgress>? taskProgress; bool committing; string lastMessage="准备就绪";
+    void RenderTaskProgress(TaskProgress value){committing=!value.CanCancel;TaskCancel.IsEnabled=value.CanCancel;TaskBar.IsIndeterminate=value.Total==null;TaskBar.Maximum=100;TaskBar.Value=value.Percent??0;TaskCount.Text=value.Percent is double percent?$"{value.Completed:N0} / {value.Total:N0} · {percent:F1}%":value.Total==0?"0 / 0":"";TaskDetail.Text=value.Stage+(string.IsNullOrEmpty(value.Current)?"":" · "+value.Current);lastMessage=TaskDetail.Text;}
+    void Report(string text) { lastMessage=text; TaskDetail.Text=text; if(cancel!=null){TaskBar.IsIndeterminate=true;TaskCount.Text="";}else Notice.ShowMessage(text,text.Contains("失败")||text.Contains("未完成")||text.Contains("无法")); }
+    async Task Run(Func<CancellationToken, Task> action, bool background=false) { if(cancel!=null){Report("任务正在进行。");return;}cancel=new();CancelButton.IsEnabled=true;TaskCancel.IsEnabled=true;TaskBar.IsIndeterminate=true;TaskCount.Text="";var source=cancel;taskProgress=new ThrottledTaskProgress(new Progress<TaskProgress>(value=>{if(cancel==source)RenderTaskProgress(value);}));bool failed=false;Notice.Dismiss();var watch=Stopwatch.StartNew();var delay=background?Task.CompletedTask:ShowProgress(source);try{await action(source.Token);}catch(OperationCanceledException){Report("已取消。");}catch(Exception ex){failed=true;Report("操作失败："+ex.Message);LogError(ex);}finally{source.Cancel();await delay;((System.Windows.Media.RotateTransform)Spinner.RenderTransform).BeginAnimation(System.Windows.Media.RotateTransform.AngleProperty,null);BusyLayer.Visibility=Visibility.Collapsed;MainSurface.Effect=null;MainSurface.IsEnabled=true;source.Dispose();taskProgress=null;committing=false;cancel=null;CancelButton.IsEnabled=false;if(!exitAfterTask)Notice.ShowMessage(lastMessage,failed);if(exitAfterTask)_=Dispatcher.BeginInvoke(Close);try{File.AppendAllText(Path.Combine(Files.State,"timings.log"),DateTimeOffset.Now+" task_ms="+watch.ElapsedMilliseconds+" "+lastMessage+Environment.NewLine);}catch{}} }
+    async Task ShowProgress(CancellationTokenSource source){try{await Task.Delay(250,source.Token);if(SystemParameters.ClientAreaAnimation)MainSurface.Effect=new System.Windows.Media.Effects.BlurEffect{Radius=5};MainSurface.IsEnabled=false;BusyLayer.Visibility=Visibility.Visible;if(SystemParameters.ClientAreaAnimation)((System.Windows.Media.RotateTransform)Spinner.RenderTransform).BeginAnimation(System.Windows.Media.RotateTransform.AngleProperty,new System.Windows.Media.Animation.DoubleAnimation(0,360,TimeSpan.FromSeconds(1.2)){RepeatBehavior=System.Windows.Media.Animation.RepeatBehavior.Forever});_ = Dispatcher.BeginInvoke(()=>TaskCancel.Focus());}catch(OperationCanceledException){}}
+    ToolTip? keyboardHelp;
+    void HelpFocus(object sender,System.Windows.Input.KeyboardFocusChangedEventArgs e){if(keyboardHelp!=null)keyboardHelp.IsOpen=false;if(e.NewFocus is Button button&&button.Style==TryFindResource("HelpButton")){keyboardHelp=new ToolTip{Content=button.ToolTip,PlacementTarget=button,IsOpen=true};button.MouseLeave+=(_,_)=>{if(keyboardHelp!=null)keyboardHelp.IsOpen=false;};}}
+    void WindowKeyDown(object sender,System.Windows.Input.KeyEventArgs e){if(e.Key==System.Windows.Input.Key.Escape){if(NationFilter.CloseDropdown()||GroupFilter.CloseDropdown()){e.Handled=true;return;}if(keyboardHelp!=null)keyboardHelp.IsOpen=false;if(cancel!=null)CancelTask(sender,new RoutedEventArgs());e.Handled=true;}}
+    static void LogError(Exception ex){try{Directory.CreateDirectory(Files.State);File.AppendAllText(Path.Combine(Files.State,"errors.log"),DateTimeOffset.Now+" "+ex+Environment.NewLine);}catch{}}
+    static Task Sta(Action action) { var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); var thread = new Thread(() => { try { action(); tcs.SetResult(); } catch (Exception e) { tcs.SetException(e); } }); thread.SetApartmentState(ApartmentState.STA); thread.Start(); return tcs.Task; }
+    readonly SemaphoreSlim indexGate=new(1,1);
+    async Task<List<Mapping>> QueryMappings(IEnumerable<string> targets,CancellationToken ct,bool preview=false){await indexGate.WaitAsync(ct);try{mappingIndex??=new MappingIndex(Path.Combine(settings.Documents,"graphics"));var progress=new Progress<string>(Report);return await Task.Run(()=>mappingIndex.Find(targets,ct,t=>((IProgress<string>)progress).Report(t),!preview,preview?null:taskProgress),ct);}finally{indexGate.Release();}}
+    async Task ScanMappings(CancellationToken ct,bool rebuild=false){await indexGate.WaitAsync(ct);try{Report("准备头像索引…");mappingIndex??=new MappingIndex(Path.Combine(settings.Documents,"graphics"));var progress=new Progress<string>(Report);mappings=await Task.Run(()=>mappingIndex.Read(ct,t=>((IProgress<string>)progress).Report(t),rebuild),ct);Report($"已索引 {mappings.Count:N0} 条映射");}finally{indexGate.Release();}}
+    async void ReadGame(object sender,RoutedEventArgs e)=>await Run(async ct=>{await UpdateRoster(ct);});
+    async Task<bool> UpdateRoster(CancellationToken ct) { Report("只读扫描 FM24…"); var progress=new Progress<(int Done,int Total)>(n=>{TaskBar.IsIndeterminate=false;TaskBar.Maximum=n.Total;TaskBar.Value=n.Done;TaskCount.Text=$"{n.Done:N0} / {n.Total:N0} 人";}); var scanned = await Task.Run(() => new GameReader().ReadProgress(ct,progress)); if(people.Count>100){var known=people.Select(p=>p.Identity).ToHashSet();if(scanned.Count(p=>known.Contains(p.Identity))<people.Count*0.7){var choice=MessageBox.Show(this,"检测到名单明显变化。\n是：更新当前存档记录；否：另建存档记录；取消：保留原名单。","选择存档头像记录",MessageBoxButton.YesNoCancel);if(choice==MessageBoxResult.Cancel)return false;await Sta(()=>writer.Deactivate(Path.Combine(settings.Documents,"graphics")));if(choice==MessageBoxResult.No){settings.Profile="存档 "+DateTime.Now.ToString("yyyyMMdd HHmmss");assigned=new();Persist();ProfileName.Text=settings.Profile;}else assigned=assigned.Where(a=>scanned.Any(p=>p.Identity==a.Person.Identity)).ToList();}}
+        MergePeople(scanned);populationGate.Reset();await Task.Run(()=>SessionGuard.Bind(settings.Profile),ct); Connection.Text = $"FM24 24.4.2 · {people.Count:N0} 人 · {settings.Profile}"; RefreshProfileChoices();Report("名单已更新。");  return true; }
+    void MergePeople(List<Person> scanned) { InvalidateBatch(); var old = people.ToDictionary(p => p.Identity); people = scanned.Select(p => old.TryGetValue(p.Identity, out var known) ? p with { Gender = p.Kind=="球员"?"男":known.Gender, Newgen = known.Newgen, Group = known.Group, Club = known.Club } : p).ToList(); storage.SavePeople(settings.Profile, people); UpdatePeople(); }
+    protected override async void OnContentRendered(EventArgs e) { base.OnContentRendered(e); await Run(async ct=>{Report("加载已保存的名单与图库…"); await Task.Run(()=>writer.RecoverInterrupted(),ct); people=await Task.Run(()=>storage.People(settings.Profile),ct);assigned=await Task.Run(()=>Files.Read<List<Assignment>>(Path.Combine(Files.State,"rows-"+Files.Hash(settings.Profile)+".json"))??new(),ct);UpdatePeople(); Connection.Text=$"{settings.Profile} · 已保存名单 {people.Count:N0} 人"; var loadProgress=new Progress<string>(Report);faces=await Task.Run(()=>FaceLibraryStore.Load(ct,t=>((IProgress<string>)loadProgress).Report(t)),ct); CanonicalizeAssignments();recommended=null;PeopleList.SelectedItem=people.FirstOrDefault(p=>p.Id==settings.LastPersonId)??people.FirstOrDefault();UpdateGallery();RefreshProfileChoices();UpdateDownloadStatus();await SyncSkinPreference(ct);Report($"图库 {faces.Count:N0} 张 · 准备就绪");StartupDiagnostic(assigned.Count);}); if(!exitAfterTask&&!settings.SkipSkinInstallPrompt&&SkinPackage.FindInstalled(settings.Documents,SkinPath.Text)==null)await ShowSkinInstaller(true); }
+    void StartupDiagnostic(int? count){try{Files.Save(Path.Combine(AppContext.BaseDirectory,"last-start.json"),new{At=DateTimeOffset.Now,Pid=Environment.ProcessId,State=Files.State,Assignments=count,Assembly=typeof(MainWindow).Assembly.ManifestModule.ModuleVersionId});}catch{}}
+    void CanonicalizeAssignments()
+    {
+        var byPath=faces.DistinctBy(f=>f.Path,StringComparer.OrdinalIgnoreCase).ToDictionary(f=>f.Path,StringComparer.OrdinalIgnoreCase);
+        assigned=assigned.Select(a=>a with{Face=byPath.GetValueOrDefault(a.Face.Path)??a.Face}).ToList();
+    }
+}

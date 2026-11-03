@@ -1,0 +1,26 @@
+<UserControl x:Class="FM24FaceAssistant.BatchPanel" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Margin="14">
+ <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <StackPanel>
+   <DockPanel><TextBlock Text="补全缺失头像" FontSize="20" FontWeight="SemiBold"/><TextBlock x:Name="Stage" Text="尚未扫描" Foreground="#FFE1A3" VerticalAlignment="Center" Margin="16,3"/></DockPanel>
+   <TextBlock Text="1 扫描（自动更新名单） → 2 查看缺图人数 → 3 应用并刷新皮肤" Foreground="#BDB7D2"/>
+   <Grid Margin="0,6"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+    <WrapPanel><Button x:Name="PreviewButton" Content="扫描缺图" Click="PreviewClick" ToolTip="自动读取最新游戏名单并检查头像；只生成方案，不写入头像。"/><Button x:Name="ApplyButton" Content="仅应用头像" Click="ApplyClick" IsEnabled="False" ToolTip="保存当前预览中可完成的分配；不切回游戏。"/><Button x:Name="ApplyRefreshButton" Content="应用并刷新皮肤" Background="#A87829" BorderBrush="#706582" Click="ApplyRefreshClick" IsEnabled="False" ToolTip="先保存预览中的头像，再切回游戏发送刷新键。未完成项不会阻止其他人应用。"/></WrapPanel>
+    <StackPanel Grid.Column="2" Orientation="Horizontal"><CheckBox x:Name="Automatic" Content="新人出现时自动补全" VerticalAlignment="Center" Click="AutoClick"/><Button Style="{StaticResource HelpButton}" ToolTip="只在游戏人物列表变化并稳定后读取新增人物。已有有效头像、已有分配与锁定记录会保留；程序退出后停止检查。" AutomationProperties.Name="自动补全说明"/></StackPanel>
+   </Grid>
+   <ItemsControl x:Name="Summary" Style="{StaticResource MetadataTags}" ToolTip="按有效映射判断缺图；兼容补图只补缺失一侧，保留已有头像。" Margin="3,0,3,8"/>
+  </StackPanel>
+  <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,4"><ComboBox x:Name="ResultFilter" Width="135" SelectionChanged="FilterChanged"><ComboBoxItem Content="全部结果" IsSelected="True"/><ComboBoxItem Content="待应用"/><ComboBoxItem Content="已保留"/><ComboBoxItem Content="未完成"/><ComboBoxItem Content="已应用"/></ComboBox><TextBlock x:Name="PageCount" VerticalAlignment="Center"/><Button Style="{StaticResource HelpButton}" ToolTip="普通 ID 和 r-ID 分别检查，只补缺失一侧；已有普通头像不会被兼容补全覆盖。优先本地区素材，缺少时扩展到邻近分类。卡片会显示实际素材分类和回退范围。职员按姓名推断，无法判断时默认男性。" AutomationProperties.Name="匹配范围说明"/></StackPanel>
+  <Grid Grid.Row="2"><ItemsControl x:Name="Cards"><ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Rows="3" Columns="3"/></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate>
+   <Border Background="#343149" BorderBrush="#49455E" BorderThickness="1" CornerRadius="5" Margin="4" Padding="9" ToolTip="{Binding Help}"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="74"/><ColumnDefinition Width="8"/><ColumnDefinition/></Grid.ColumnDefinitions>
+    <Grid><Border Background="#2B283F" CornerRadius="4"><Path Stroke="#8D83A6" StrokeThickness="1.3" Width="33" Height="39" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" Data="M18,1 A8,8 0 1 1 17.99,1 M2,38 C2,18 34,18 34,38 Z"/></Border><Image Source="{Binding Image, Converter={StaticResource Thumbnail}}" Stretch="Uniform"/></Grid>
+    <Grid Grid.Column="2"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+     <TextBlock Text="{Binding Name}" FontFamily="Segoe UI" FontWeight="SemiBold" FontSize="14" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" Margin="0"/>
+     <ItemsControl Grid.Row="1" Style="{StaticResource MetadataTags}" ItemsSource="{Binding Tags}" Margin="0,2"/>
+     <TextBlock Grid.Row="2" Text="{Binding Detail}" FontSize="12" TextWrapping="Wrap" MaxHeight="34" TextTrimming="CharacterEllipsis" Margin="0"/>
+     <DockPanel Grid.Row="3"><Button DockPanel.Dock="Right" Content="查看" Click="ViewPerson" Padding="8,0" MinHeight="23" Height="23" Margin="0" FontSize="11" ToolTip="在头像管理中打开此人，检查或手动换图。"/><TextBlock Text="{Binding Status}" Foreground="{Binding Color}" FontSize="11" VerticalAlignment="Center" Margin="0"/></DockPanel>
+    </Grid>
+   </Grid></Border>
+  </DataTemplate></ItemsControl.ItemTemplate></ItemsControl><StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center"><Path Width="42" Height="48" Stretch="Uniform" Stroke="#8D83A6" StrokeThickness="1.4" Data="M18,1 A8,8 0 1 1 17.99,1 M2,38 C2,18 34,18 34,38 Z"/><TextBlock x:Name="EmptyText" Text="扫描后在此查看匹配结果" Foreground="#BDB7D2" Margin="5,12"/></StackPanel></Grid>
+  <Grid Grid.Row="3" Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock x:Name="Outcome" Text="尚未写入头像" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/><StackPanel Grid.Column="1" Orientation="Horizontal"><Button x:Name="Previous" Content="上一页" Click="PreviousClick" IsEnabled="False"/><TextBlock x:Name="PageNumber" Text="1 / 1" VerticalAlignment="Center" Width="90" TextAlignment="Center"/><Button x:Name="Next" Content="下一页" Click="NextClick" IsEnabled="False"/></StackPanel><Button Grid.Column="2" x:Name="RefreshButton" Content="只刷新皮肤" Click="RefreshClick" IsEnabled="False" ToolTip="重新发送刷新键，不会重新分配或重复写入头像。"/></Grid>
+ </Grid>
+</UserControl>
