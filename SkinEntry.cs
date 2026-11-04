@@ -25,7 +25,7 @@ public static class SkinEntry
     }
     public static void Install(string skin,PatchWriter writer,string? executable=null)
     {
-        var launch=LaunchUri(executable??(File.Exists(Path.Combine(AppContext.BaseDirectory,"FM24FaceAssistant.exe"))?Path.Combine(AppContext.BaseDirectory,"FM24FaceAssistant.exe"):Environment.ProcessPath!));
+        var launch=LaunchUri(executable??Environment.ProcessPath!);
         var panels=Path.Combine(skin,"panels");if(!Directory.Exists(panels))throw new IOException("皮肤目录中没有 panels 文件夹。");
         var toolbar=Directory.EnumerateFiles(panels,"*.xml",SearchOption.AllDirectories).FirstOrDefault(path=>File.ReadAllText(path).Contains("id=\"bgs2\""))??throw new IOException("没有找到背景切换按钮 bgs2，未修改皮肤。");
         var originals=new Dictionary<string,string>();var documents=new Dictionary<string,XDocument>();

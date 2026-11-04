@@ -26,6 +26,7 @@ public partial class MainWindow
     {
         if(faces.Count>0&&File.Exists(faces[0].Path)){Report($"本地图库已就绪，共 {faces.Count:N0} 张，无需重复下载。");return;}
         var root=LibraryRoot();var assets=LibraryPaths.DownloadDirectory(root,Files.State,settings.LibraryDownloadPath);Directory.CreateDirectory(assets);var statusPath=Path.Combine(assets,"download-status.json");
+        settings.LibraryDownloadPath=assets;LibraryDownloadPath.Text=assets;Persist();
         var python=await Task.Run(()=>PythonRuntime.Find(),ct);
         var start=python.Start(Path.Combine(root,"download_ngregens.py"),root);
         start.ArgumentList.Add("--managed");start.ArgumentList.Add("--state-dir");start.ArgumentList.Add(Files.State);start.ArgumentList.Add("--assets-dir");start.ArgumentList.Add(assets);
