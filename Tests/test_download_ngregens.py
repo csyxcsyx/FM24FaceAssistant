@@ -106,6 +106,21 @@ class PipelineTests(unittest.TestCase):
         with patch.object(mod.os,"replace",flaky):mod.status("downloading",downloaded=42,total=100)
         self.assertEqual(len(calls),3)
         self.assertEqual(json.loads(mod.STATUS.read_text(encoding="utf-8"))["downloaded"],42)
+    def test_custom_state_and_download_paths_create_status_parent(self):
+        custom_state=self.root/"redirected-profile"/"state"
+        custom_assets=self.root/"large-drive"/"FM24"/"downloads"
+        with patch.object(mod.sys,"argv",[str(script),"--state-dir",str(custom_state),"--assets-dir",str(custom_assets)]):
+            state,assets=mod.resolve_paths()
+        self.assertEqual(state,custom_state)
+        self.assertEqual(assets,custom_assets)
+        original=(mod.STATE,mod.ASSETS,mod.STATUS)
+        try:
+            mod.STATE=state;mod.ASSETS=assets;mod.STATUS=assets/"download-status.json"
+            mod.status("preparing",note="test")
+            self.assertTrue(mod.STATUS.is_file())
+            self.assertEqual(json.loads(mod.STATUS.read_text(encoding="utf-8"))["stage"],"preparing")
+        finally:
+            mod.STATE,mod.ASSETS,mod.STATUS=original
     def test_wf_is_female_player_directory(self):
         self.assertEqual(mod.classify(PurePosixPath("NG_Regens/WF/China/a.png")),("China","球员","女"))
     def test_corrupt_entry_crc_rejected_before_catalog_commit(self):

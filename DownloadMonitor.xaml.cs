@@ -9,10 +9,11 @@ namespace FM24FaceAssistant;
 public partial class DownloadMonitor : Window
 {
     readonly DispatcherTimer timer = new(){Interval=TimeSpan.FromSeconds(1)};
-    readonly string assets;
+    readonly string assets=Path.Combine(Files.State,"library-download");
+    readonly string? programRoot;
     bool starting;
     readonly System.Collections.Generic.HashSet<string> loggedEvents=new(); string lastConnection=""; long lastNetwork; DateTime lastSample=DateTime.UtcNow; double recentSpeed;
-    public DownloadMonitor(){InitializeComponent();var dir=new DirectoryInfo(AppContext.BaseDirectory);while(dir!=null&&!File.Exists(Path.Combine(dir.FullName,"download_ngregens.py")))dir=dir.Parent;assets=Path.Combine(dir?.FullName??AppContext.BaseDirectory,"assets");timer.Tick+=(_,_)=>Refresh();Closed+=(_,_)=>timer.Stop();Refresh();timer.Start();}
+    public DownloadMonitor(){InitializeComponent();var dir=new DirectoryInfo(AppContext.BaseDirectory);while(dir!=null&&!File.Exists(Path.Combine(dir.FullName,"download_ngregens.py")))dir=dir.Parent;programRoot=dir?.FullName;Directory.CreateDirectory(assets);timer.Tick+=(_,_)=>Refresh();Closed+=(_,_)=>timer.Stop();Refresh();timer.Start();}
     void Event(string key,string message){if(!loggedEvents.Add(key))return;Log.AppendText($"[{DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(8)):HH:mm:ss}] {message}\n");Log.ScrollToEnd();}
     void Refresh()
     {
@@ -47,7 +48,8 @@ public partial class DownloadMonitor : Window
     {
         starting=true;Recovery.IsEnabled=false;
         try{
-            var script=Path.Combine(Directory.GetParent(assets)!.FullName,"start_library_worker.ps1");
+            if(programRoot==null)throw new IOException("未找到图库下载组件，请从完整程序目录启动。");
+            var script=Path.Combine(programRoot,"start_library_worker.ps1");
             var info=new ProcessStartInfo("powershell.exe"){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true};
             foreach(var arg in new[]{"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",script})info.ArgumentList.Add(arg);
             using var process=Process.Start(info)??throw new IOException("无法启动图库任务。");
@@ -59,6 +61,6 @@ public partial class DownloadMonitor : Window
         }catch(Exception ex){Event("resume-error:"+DateTime.UtcNow.Ticks,"恢复失败："+ex.Message);}
         finally{starting=false;Refresh();}
     }
-    void OpenFolder(object sender,RoutedEventArgs e)=>Process.Start(new ProcessStartInfo(assets){UseShellExecute=true});
+    void OpenFolder(object sender,RoutedEventArgs e){Directory.CreateDirectory(assets);Process.Start(new ProcessStartInfo(assets){UseShellExecute=true});}
     void CloseMonitor(object sender,RoutedEventArgs e)=>Close();
 }

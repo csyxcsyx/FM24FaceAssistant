@@ -27,10 +27,13 @@ public partial class MainWindow
     async void DownloadLibrary(object sender,RoutedEventArgs e)=>await Run(async ct=>
     {
         if(faces.Count>0&&File.Exists(faces[0].Path)){Report($"本地图库已就绪，共 {faces.Count:N0} 张，无需重复下载。");return;}
-        var root=LibraryRoot();var statusPath=Path.Combine(root,"assets","download-status.json");
-        var start=new ProcessStartInfo("python"){UseShellExecute=false,CreateNoWindow=true,WorkingDirectory=root};
-        start.ArgumentList.Add(Path.Combine(root,"download_ngregens.py"));start.ArgumentList.Add("--managed");start.ArgumentList.Add("--state-dir");start.ArgumentList.Add(Files.State);
+        var root=LibraryRoot();var assets=Path.Combine(Files.State,"library-download");Directory.CreateDirectory(assets);var statusPath=Path.Combine(assets,"download-status.json");
+        var python=await Task.Run(()=>PythonRuntime.Find(),ct);
+        var start=python.Start(Path.Combine(root,"download_ngregens.py"),root);
+        start.ArgumentList.Add("--managed");start.ArgumentList.Add("--state-dir");start.ArgumentList.Add(Files.State);start.ArgumentList.Add("--assets-dir");start.ArgumentList.Add(assets);
+        start.RedirectStandardOutput=true;start.RedirectStandardError=true;
         using var worker=Process.Start(start)??throw new IOException("无法启动 Python 图库下载组件。");
+        var output=worker.StandardOutput.ReadToEndAsync();var errorOutput=worker.StandardError.ReadToEndAsync();
         try
         {
             while(!worker.HasExited)
@@ -46,9 +49,10 @@ public partial class MainWindow
                 }
                 await Task.Delay(500,ct);
             }
-            using(var doc=JsonDocument.Parse(Files.ReadTextShared(statusPath))){var data=doc.RootElement;if(worker.ExitCode!=0||data.GetProperty("stage").GetString()!="complete")throw new IOException(data.TryGetProperty("error",out var error)?error.GetString():"下载未完成，可点击接续下载。请确认 Python 和 Pillow 可用。");}
+            if(!File.Exists(statusPath)){var detail=(await errorOutput).Trim();if(detail.Length==0)detail=(await output).Trim();throw new IOException(worker.ExitCode!=0?$"图库下载器未能写入状态文件（退出码 {worker.ExitCode}）。{(detail.Length>0?Environment.NewLine+detail:" 请检查数据目录权限。")}":"图库下载器已退出，但没有生成状态文件；请检查数据目录权限后重试。");}
+            using(var doc=JsonDocument.Parse(Files.ReadTextShared(statusPath))){var data=doc.RootElement;if(worker.ExitCode!=0||data.GetProperty("stage").GetString()!="complete")throw new IOException(data.TryGetProperty("error",out var error)?error.GetString():"下载未完成，可点击接续下载。");}
             faces=await Task.Run(()=>FaceLibraryStore.Load(ct,t=>taskProgress?.Report(new(t,0,null))),ct);
-            settings.Pack=Path.Combine(root,"assets","NG_Regens_Library");PackPath.Text=settings.Pack;Persist();CanonicalizeAssignments();recommended=null;UpdateGallery();UpdateDownloadStatus();Report($"图库已就绪，共 {faces.Count:N0} 张。");
+            settings.Pack=Path.Combine(assets,"NG_Regens_Library");PackPath.Text=settings.Pack;Persist();CanonicalizeAssignments();recommended=null;UpdateGallery();UpdateDownloadStatus();Report($"图库已就绪，共 {faces.Count:N0} 张。");
         }
         finally{if(!worker.HasExited){await Task.Run(()=>worker.Kill(true));await worker.WaitForExitAsync();} }
     });

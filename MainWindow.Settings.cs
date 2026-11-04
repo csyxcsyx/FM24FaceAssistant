@@ -50,7 +50,7 @@ public partial class MainWindow
             var directory=new DirectoryInfo(AppContext.BaseDirectory);
             while(directory!=null&&!File.Exists(Path.Combine(directory.FullName,"download_ngregens.py")))directory=directory.Parent;
             if(directory==null){LibraryDownloadStatus.Text="此程序目录下没有下载任务。";return;}
-            var path=Path.Combine(directory.FullName,"assets","download-status.json");
+            var path=Path.Combine(Files.State,"library-download","download-status.json");
             if(!File.Exists(path)){LibraryDownloadStatus.Text="尚未开始下载。可运行程序目录中的继续下载脚本。";return;}
             using var doc=System.Text.Json.JsonDocument.Parse(Files.ReadTextShared(path));var data=doc.RootElement;
             long Number(string key)=>data.TryGetProperty(key,out var value)&&value.TryGetInt64(out long number)?number:0;

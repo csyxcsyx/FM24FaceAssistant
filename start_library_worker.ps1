@@ -28,10 +28,12 @@ if (Test-Path -LiteralPath $locationFile) {
     if ($location.Root) { $stateDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $location.Root)) }
 }
 New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
+$assetsDirectory = Join-Path $stateDirectory 'library-download'
+New-Item -ItemType Directory -Path $assetsDirectory -Force | Out-Null
 
 # WMI owns the worker, keeping it independent of a terminal or monitor lifetime.
 $quote = { param([string]$value) '"' + $value.Replace('"', '\"') + '"' }
-$workerCommand = (& $quote $pythonWindowless) + ' ' + (& $quote $workerScript) + ' --state-dir ' + (& $quote $stateDirectory)
+$workerCommand = (& $quote $pythonWindowless) + ' ' + (& $quote $workerScript) + ' --state-dir ' + (& $quote $stateDirectory) + ' --assets-dir ' + (& $quote $assetsDirectory)
 $result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine=$workerCommand;CurrentDirectory=$PSScriptRoot}
 if ($result.ReturnValue -ne 0) { throw "启动图库任务失败，Windows 返回 $($result.ReturnValue)。" }
 Write-Output "图库任务已启动，PID $($result.ProcessId)。"

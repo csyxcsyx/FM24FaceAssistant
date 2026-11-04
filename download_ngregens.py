@@ -23,13 +23,30 @@ import zipfile
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent
-ASSETS = ROOT / "assets"
+def option(name):
+    try:
+        return Path(sys.argv[sys.argv.index(name) + 1])
+    except (ValueError, IndexError):
+        return None
+
+def resolve_paths():
+    configured_state = option("--state-dir")
+    location_file = ROOT / "data-location.json"
+    if configured_state is not None:
+        state = configured_state
+    elif location_file.exists():
+        state = (ROOT / json.loads(location_file.read_text(encoding="utf-8-sig"))["Root"]).resolve()
+    else:
+        state = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "FM24FaceAssistant"
+    assets = option("--assets-dir") or (state / "library-download" if "--state-dir" in sys.argv else ROOT / "assets")
+    return state, assets
+
+STATE, ASSETS = resolve_paths()
 URL = "https://download.ngregens.org/NG_Regens_MainPack.zip"
 EXPECTED = 7313137436
 ARCHIVE = ASSETS / "NG_Regens_MainPack.zip"
 PART = ASSETS / "NG_Regens_MainPack.zip.part"
 STATUS = ASSETS / "download-status.json"
-STATE = Path(sys.argv[sys.argv.index("--state-dir") + 1]) if "--state-dir" in sys.argv else (ROOT / json.loads((ROOT / "data-location.json").read_text(encoding="utf-8-sig"))["Root"]).resolve() if (ROOT / "data-location.json").exists() else Path(os.environ["LOCALAPPDATA"]) / "FM24FaceAssistant"
 CREATE_NO_WINDOW = 0x08000000
 
 def save(path, obj):
@@ -256,7 +273,7 @@ def extract_and_index():
     status("complete", **report, note="重启头像助手即可加载图库；未修改任何人物映射、原皮肤或存档。")
 
 def main():
-    ASSETS.mkdir(exist_ok=True)
+    ASSETS.mkdir(parents=True, exist_ok=True)
     with (ASSETS / "download.lock").open("a+b") as lock:
         lock.seek(0)
         if lock.read(1) == b"":
