@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,41 +19,35 @@ public partial class MainWindow
         if(cancel!=null){if(!committing)cancel.Cancel();}else Close();
         return true;
     }
-    string LibraryRoot()
+    readonly LibraryDownloadService libraryDownload=new();
+    public bool IsLibraryDownloading=>libraryDownload.IsRunning;
+    public string? LibraryTaskId=>libraryDownload.TaskId;
+    public string LibraryDownloadDirectory=>LibraryPaths.DownloadDirectory(LibraryPaths.FindProgramRoot(),Files.State,settings.LibraryDownloadPath);
+    void ViewLibraryMonitor(object sender,RoutedEventArgs e)=>((App)Application.Current).ShowMonitor(this);
+    public void CancelLibraryDownload(){if(IsLibraryDownloading)cancel?.Cancel();}
+    async void DownloadLibrary(object sender,RoutedEventArgs e)=>await StartLibraryDownload();
+    public async Task StartLibraryDownload()
     {
-        return LibraryPaths.FindProgramRoot()??throw new IOException("缺少图库下载组件 download_ngregens.py，请使用完整程序目录。");
-    }
-    async void DownloadLibrary(object sender,RoutedEventArgs e)=>await Run(async ct=>
-    {
-        if(faces.Count>0&&File.Exists(faces[0].Path)){Report($"本地图库已就绪，共 {faces.Count:N0} 张，无需重复下载。");return;}
-        var root=LibraryRoot();var assets=LibraryPaths.DownloadDirectory(root,Files.State,settings.LibraryDownloadPath);Directory.CreateDirectory(assets);var statusPath=Path.Combine(assets,"download-status.json");
-        settings.LibraryDownloadPath=assets;LibraryDownloadPath.Text=assets;Persist();
-        var python=await Task.Run(()=>PythonRuntime.Find(),ct);
-        var start=python.Start(Path.Combine(root,"download_ngregens.py"),root);
-        start.ArgumentList.Add("--managed");start.ArgumentList.Add("--state-dir");start.ArgumentList.Add(Files.State);start.ArgumentList.Add("--assets-dir");start.ArgumentList.Add(assets);
-        start.RedirectStandardOutput=true;start.RedirectStandardError=true;
-        using var worker=Process.Start(start)??throw new IOException("无法启动 Python 图库下载组件。");
-        var output=worker.StandardOutput.ReadToEndAsync();var errorOutput=worker.StandardError.ReadToEndAsync();
-        try
-        {
-            while(!worker.HasExited)
-            {
-                ct.ThrowIfCancellationRequested();
-                if(File.Exists(statusPath))
-                {
-                    using var doc=JsonDocument.Parse(Files.ReadTextShared(statusPath));var data=doc.RootElement;
-                    long Number(string key)=>data.TryGetProperty(key,out var n)&&n.TryGetInt64(out var value)?value:0;
-                    var stage=data.GetProperty("stage").GetString();
-                    // Ignore a status snapshot left by a previous worker.
-                    if(Number("pid")==worker.Id){var indexing=stage=="indexing";var total=Number(indexing?"total_images":"total");var done=Number(indexing?"processed":"downloaded");taskProgress?.Report(new(indexing?"校验图片并建立索引":stage=="preparing"?"检查压缩包":"下载 NG_Regens 图库",done,total>0?total:null,indexing?$"{done:N0} 张":$"{done/1_000_000d:F0} MB · {Number("bytes_per_second")/1_000_000d:F1} MB/s"));LibraryDownloadStatus.Text=indexing?$"已处理 {done:N0} / {total:N0} 张":$"已下载 {done/1_000_000d:F0} / {total/1_000_000d:F0} MB";}
-                }
-                await Task.Delay(500,ct);
-            }
-            if(!File.Exists(statusPath)){var detail=(await errorOutput).Trim();if(detail.Length==0)detail=(await output).Trim();throw new IOException(worker.ExitCode!=0?$"图库下载器未能写入状态文件（退出码 {worker.ExitCode}）。{(detail.Length>0?Environment.NewLine+detail:" 请检查数据目录权限。")}":"图库下载器已退出，但没有生成状态文件；请检查数据目录权限后重试。");}
-            using(var doc=JsonDocument.Parse(Files.ReadTextShared(statusPath))){var data=doc.RootElement;if(worker.ExitCode!=0||data.GetProperty("stage").GetString()!="complete")throw new IOException(data.TryGetProperty("error",out var error)?error.GetString():"下载未完成，可点击接续下载。");}
+        if(cancel!=null){Report(IsLibraryDownloading?"图库任务正在进行，请查看当前进度。":"请等待当前任务结束。");return;}
+        await Run(async ct=>{
+            if(faces.Count>0&&faces.All(f=>File.Exists(f.Path))){Report($"本地图库已就绪，共 {faces.Count:N0} 张，无需重复下载。");return;}
+            var assets=LibraryDownloadDirectory;settings.LibraryDownloadPath=assets;LibraryDownloadPath.Text=assets;Persist();
+            var progress=new Progress<LibraryProgress>(p=>{
+                var indexing=p.stage=="indexing";var done=indexing?p.processed:p.downloaded;var total=indexing?p.total_images:p.total;
+                taskProgress?.Report(new(indexing?"校验图片并建立索引":p.stage=="retrying"?"连接中断，准备重试":p.stage=="preparing"?"检查本地图库":"下载 NG_Regens 图库",done,total>0?total:null));
+                LibraryDownloadStatus.Text=indexing?$"已处理 {done:N0} / {total:N0} 张":$"已保存 {done/1e9:F2} / {total/1e9:F2} GB";
+            });
+            var result=await libraryDownload.RunAsync(assets,Files.State,progress,ct);
             faces=await Task.Run(()=>FaceLibraryStore.Load(ct,t=>taskProgress?.Report(new(t,0,null))),ct);
-            settings.Pack=Path.Combine(assets,"NG_Regens_Library");PackPath.Text=settings.Pack;Persist();CanonicalizeAssignments();recommended=null;UpdateGallery();UpdateDownloadStatus();Report($"图库已就绪，共 {faces.Count:N0} 张。");
-        }
-        finally{if(!worker.HasExited){await Task.Run(()=>worker.Kill(true));await worker.WaitForExitAsync();} }
-    });
+            settings.Pack=result.Library;PackPath.Text=result.Library;Persist();CanonicalizeAssignments();recommended=null;UpdateGallery();UpdateDownloadStatus();Report($"图库已就绪，共 {faces.Count:N0} 张，可直接选用。");
+        },true);
+    }
+    public void SelectLibraryDownloadLocation()
+    {
+        if(cancel!=null){Report("请先取消当前任务，再选择下载位置。");return;}
+        var dialog=new Microsoft.Win32.OpenFolderDialog{Title="选择空间充足的图库下载位置"};
+        if(dialog.ShowDialog()!=true)return;
+        settings.LibraryDownloadPath=dialog.FolderName;LibraryDownloadPath.Text=dialog.FolderName;Persist();UpdateDownloadStatus();
+        Report("已更换下载位置。原目录的文件和进度仍保留；选择原目录可继续原任务。");
+    }
 }

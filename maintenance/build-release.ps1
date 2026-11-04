@@ -14,11 +14,11 @@ try {
     & dotnet publish (Join-Path $taskProject 'FM24FaceAssistant.csproj') -c Release -r win-x64 --self-contained true -p:DebugType=None -p:DebugSymbols=false -o $taskPackage
     if ($LASTEXITCODE -ne 0) { throw '程序构建失败，未生成发布包。' }
     Rename-Item -LiteralPath (Join-Path $taskPackage 'FM24FaceAssistant.exe') -NewName 'FM24头像助手.exe'
-    foreach ($taskRequired in @('FM24头像助手.exe', 'FM24FaceAssistant.dll', 'coreclr.dll', 'README.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md', 'download_ngregens.py', 'start_library_worker.ps1', 'Bundled/FLAYUS skin 24 YUXIANde.zip', 'Bundled/FLAYUS skin 24 YUXIANde.json', 'Data/Names/LICENSE.txt', 'Data/Names/GNU_DOC.TXT', 'Data/Names/NOTICE')) {
+    foreach ($taskRequired in @('FM24头像助手.exe', 'FM24FaceAssistant.dll', 'coreclr.dll', 'README.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md',  'Bundled/FLAYUS skin 24 YUXIANde.zip', 'Bundled/FLAYUS skin 24 YUXIANde.json', 'Data/Names/LICENSE.txt', 'Data/Names/GNU_DOC.TXT', 'Data/Names/NOTICE')) {
         if (!(Test-Path -LiteralPath (Join-Path $taskPackage $taskRequired) -PathType Leaf)) { throw ('发布包缺少文件：' + $taskRequired) }
     }
     $taskForbidden = @(Get-ChildItem -LiteralPath $taskPackage -Recurse -Force | Where-Object {
-        $_.Name -in @('data-location.json', 'last-start.json', 'assets', 'user-data', '.git', '__pycache__') -or $_.Extension -in @('.pdb', '.log', '.db')
+        $_.Name -in @('data-location.json', 'last-start.json', 'assets', 'user-data', '.git', '__pycache__', 'download_ngregens.py', 'start_library_worker.ps1', 'python.exe', 'pythonw.exe', 'curl.exe') -or $_.Extension -in @('.pdb', '.log', '.db')
     })
     if ($taskForbidden.Count) { throw '发布输出包含本机数据或调试产物，停止打包。' }
     [IO.Compression.ZipFile]::CreateFromDirectory($taskStage, $taskArchive + '.tmp', [IO.Compression.CompressionLevel]::Optimal, $false)

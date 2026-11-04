@@ -67,6 +67,7 @@ public static class Files
 {
     public static readonly JsonSerializerOptions Json = new() { WriteIndented = true, PropertyNameCaseInsensitive = true };
     public static string State = StateLocation.Find();
+    public static string Sqlite(string path)=>new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder{DataSource=path}.ToString();
     public static string Hash(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
     public static void Atomic(string path, string text) { Directory.CreateDirectory(Path.GetDirectoryName(path)!); var temp = path + ".tmp"; File.WriteAllText(temp, text, Encoding.UTF8); for(int retry=0;;retry++){try{File.Move(temp,path,true);break;}catch(Exception e) when(retry<39 && (e is IOException || e is UnauthorizedAccessException)){System.Threading.Thread.Sleep(25);}} }
     public static string ReadTextShared(string path) { using var stream=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete); using var reader=new StreamReader(stream);return reader.ReadToEnd(); }

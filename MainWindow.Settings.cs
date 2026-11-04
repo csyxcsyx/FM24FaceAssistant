@@ -27,7 +27,7 @@ public partial class MainWindow
     async void SaveSettings(object sender,RoutedEventArgs e)
     {
         if(cancel!=null){Report("请等待当前任务结束，再保存设置。");return;}
-        try{Integration.ParseKey(HotkeyBox.Text);Integration.ParseKey(RefreshBox.Text);var documents=Path.GetFullPath(DocsPath.Text);if(!documents.Equals(settings.Documents,StringComparison.OrdinalIgnoreCase))InvalidateBatch();var selectedLibraryPath=string.IsNullOrWhiteSpace(LibraryDownloadPath.Text)?"":Path.GetFullPath(LibraryDownloadPath.Text.Trim());var root=LibraryPaths.FindProgramRoot();var currentLibraryPath=LibraryPaths.DownloadDirectory(root,Files.State,settings.LibraryDownloadPath);if(!string.Equals(selectedLibraryPath,settings.LibraryDownloadPath,StringComparison.OrdinalIgnoreCase)&&LibraryPaths.HasDownloadData(currentLibraryPath))throw new IOException("当前下载目录已有图库或断点。请先完成或继续现有任务，再更改目录；原文件和进度仍保留。");settings.Documents=documents;settings.Pack=PackPath.Text;settings.LibraryDownloadPath=selectedLibraryPath;settings.Hotkey=HotkeyBox.Text;settings.RefreshKey=RefreshBox.Text;settings.Skin=SkinPath.Text;settings.ShowSkinEntry=ShowSkinEntry.IsChecked==true;SetHotkey();Persist();await Run(async ct=>{await SyncSkinPreference(ct);Report("设置已保存。");});}catch(Exception ex){Report(ex.Message);}
+        try{Integration.ParseKey(HotkeyBox.Text);Integration.ParseKey(RefreshBox.Text);var documents=Path.GetFullPath(DocsPath.Text);if(!documents.Equals(settings.Documents,StringComparison.OrdinalIgnoreCase))InvalidateBatch();var selectedLibraryPath=string.IsNullOrWhiteSpace(LibraryDownloadPath.Text)?"":Path.GetFullPath(LibraryDownloadPath.Text.Trim());settings.Documents=documents;settings.Pack=PackPath.Text;settings.LibraryDownloadPath=selectedLibraryPath;settings.Hotkey=HotkeyBox.Text;settings.RefreshKey=RefreshBox.Text;settings.Skin=SkinPath.Text;settings.ShowSkinEntry=ShowSkinEntry.IsChecked==true;SetHotkey();Persist();await Run(async ct=>{await SyncSkinPreference(ct);Report("设置已保存。");});}catch(Exception ex){Report(ex.Message);}
     }
     void RefreshProfileChoices(){var names=storage.Profiles();if(!names.Contains(settings.Profile))names.Add(settings.Profile);ProfileChoice.ItemsSource=names;ProfileChoice.SelectedItem=settings.Profile;ProfileName.Text="";ProfileState.Text="当前使用："+settings.Profile;LoadSpecialPortraits();}
     async void SwitchProfile(object sender,RoutedEventArgs e){if(ProfileChoice.SelectedItem is not string name||name==settings.Profile){Report("已在使用此记录。");return;}await SwitchRecord(name);}
@@ -57,9 +57,10 @@ public partial class MainWindow
             long Number(string key)=>data.TryGetProperty(key,out var value)&&value.TryGetInt64(out long number)?number:0;
             var stage=data.GetProperty("stage").GetString();
             if(stage=="complete"){LibraryDownloadStatus.Text=$"图库已就绪";return;}
+            if(stage=="cancelled"){LibraryDownloadStatus.Text="已保存进度，点击下载 / 接续图库可继续。";return;}
             if(stage=="failed"){LibraryDownloadStatus.Text="下载未完成："+data.GetProperty("error").GetString();return;}
             if(stage=="indexing"){LibraryDownloadStatus.Text=$"校验并建立索引：{Number("processed"):N0} / {Number("total_images"):N0} 张";return;}
-            bool running;try{using var process=Process.GetProcessById((int)Number("pid"));running=!process.HasExited;}catch{running=false;}
+            bool running=libraryDownload.IsRunning&&data.TryGetProperty("task_id",out var id)&&id.GetString()==libraryDownload.TaskId;
             LibraryDownloadStatus.Text=$"{(running?"正在下载":"下载进程已停止，进度仍保留")}：{Number("downloaded")/1_000_000_000d:F2} / {Number("total")/1_000_000_000d:F2} GB · {Number("bytes_per_second")/1_000_000d:F2} MB/s";
         }
         catch(Exception ex){LibraryDownloadStatus.Text="读取下载状态失败："+ex.Message;}

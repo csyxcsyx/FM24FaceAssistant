@@ -12,7 +12,7 @@ public sealed class Storage : IDisposable
     readonly SqliteConnection db;
     public Storage(string root)
     {
-        SQLitePCL.Batteries_V2.Init(); Directory.CreateDirectory(root); db = new($"Data Source={Path.Combine(root, "state.db")}"); db.Open();
+        SQLitePCL.Batteries_V2.Init(); Directory.CreateDirectory(root); db = new(Files.Sqlite(Path.Combine(root, "state.db"))); db.Open();
         using var cmd = db.CreateCommand(); cmd.CommandText = "CREATE TABLE IF NOT EXISTS assignments(profile TEXT, identity TEXT, payload TEXT, PRIMARY KEY(profile,identity)); CREATE TABLE IF NOT EXISTS people(profile TEXT PRIMARY KEY,payload TEXT);"; cmd.ExecuteNonQuery();
     }
     public List<Assignment> Load(string profile) { using var c = db.CreateCommand(); c.CommandText = "SELECT payload FROM assignments WHERE profile=$p"; c.Parameters.AddWithValue("$p", profile); using var r = c.ExecuteReader(); var list = new List<Assignment>(); while (r.Read()) list.Add(JsonSerializer.Deserialize<Assignment>(r.GetString(0), Files.Json)!); return list; }

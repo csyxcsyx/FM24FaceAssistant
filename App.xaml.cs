@@ -61,7 +61,7 @@ public partial class App : Application
         }
         catch(Exception ex){WindowActivation.Record("forward-failed",false);MessageBox.Show("已有头像助手正在运行或启动，暂时无法切换。请退出托盘中的旧版后重试。"+Environment.NewLine+ex.Message,"头像助手");return false;}
     }
-    void ShowMonitor(MainWindow window)
+    internal void ShowMonitor(MainWindow window)
     {
         if(monitor!=null){monitor.Show();monitor.Activate();return;}
         monitor=new DownloadMonitor{Owner=window};monitor.Closed+=(_,_)=>monitor=null;monitor.Show();

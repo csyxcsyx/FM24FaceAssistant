@@ -9,9 +9,7 @@ public static class LibraryPaths
 
     public static string? FindProgramRoot()
     {
-        for(var directory=new DirectoryInfo(System.AppContext.BaseDirectory);directory!=null;directory=directory.Parent)
-            if(File.Exists(Path.Combine(directory.FullName,"download_ngregens.py")))return directory.FullName;
-        return null;
+        return System.AppContext.BaseDirectory;
     }
 
     public static string DownloadDirectory(string? programRoot,string state,string? preferredDirectory=null)
