@@ -73,6 +73,7 @@ var root=Path.Combine(Path.GetTempPath(),"FM24FaceAssistant-test-"+Guid.NewGuid(
   PortraitPreviewChecks.Run(Check,p,f,root);
   InstanceChecks.Run(Check,root);
   LibraryDownloadChecks.Run(Check,root);
+  IconChecks.Run(Check);
   Check(Integration.ParseKey("Ctrl+Alt+F")== (3u,70u),"快捷键解析");Console.WriteLine($"{checks} checks passed. Temporary artifacts: {root}");return 0;
  }catch(Exception e){Console.Error.WriteLine(e);return 1;}}
 }
