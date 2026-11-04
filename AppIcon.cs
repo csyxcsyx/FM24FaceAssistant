@@ -34,7 +34,7 @@ public static class AppIconAssets
 {
     public static System.Drawing.Icon CreateTrayIcon()
     {
-        using var stream=Application.GetResourceStream(new Uri("pack://application:,,,/FM24FaceAssistant;component/assistant.ico",UriKind.Absolute))?.Stream??throw new InvalidOperationException("内置程序图标缺失。");
+        using var stream=typeof(AppIconAssets).Assembly.GetManifestResourceStream("FM24FaceAssistant.AppIcon.ico")??throw new InvalidOperationException("内置程序图标缺失。");
         using var source=new System.Drawing.Icon(stream);
         return (System.Drawing.Icon)source.Clone();
     }

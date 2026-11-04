@@ -18,6 +18,7 @@
   <ItemGroup>
     <Compile Remove="Tests/**/*.cs" />
     <Resource Include="assistant.ico" />
+    <EmbeddedResource Include="assistant.ico" LogicalName="FM24FaceAssistant.AppIcon.ico" />
     <EmbeddedResource Include="Data/Names/nam_dict.txt;Data/Names/gender.csv" />
     <Content Include="assistant.ico;README.md;LICENSE;THIRD-PARTY-NOTICES.md"
              CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

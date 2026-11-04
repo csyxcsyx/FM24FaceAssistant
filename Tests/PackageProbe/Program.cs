@@ -19,6 +19,7 @@ static class Program
             var package=Path.GetFullPath(args[0]);var sandbox=Path.GetFullPath(args[1]);Directory.CreateDirectory(sandbox);
             AssemblyLoadContext.Default.Resolving+=(_,name)=>File.Exists(Path.Combine(package,name.Name+".dll"))?AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.Combine(package,name.Name+".dll")):null;
             var assembly=AssemblyLoadContext.Default.LoadFromAssemblyPath(Path.Combine(package,"FM24FaceAssistant.dll"));
+            using(var tray=(IDisposable)assembly.GetType("FM24FaceAssistant.AppIconAssets")!.GetMethod("CreateTrayIcon")!.Invoke(null,null)!){}
             var bmp=BitmapSource.Create(2,2,96,96,PixelFormats.Bgra32,null,new byte[16],8);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bmp));using var png=new MemoryStream();encoder.Save(png);
             using var buffer=new MemoryStream();using(var zip=new ZipArchive(buffer,ZipArchiveMode.Create,true)){using var output=zip.CreateEntry("NG_Regens/China/face.png").Open();output.Write(png.ToArray());}
             var bytes=buffer.ToArray();using var stop=new CancellationTokenSource();var server=new TcpListener(IPAddress.Loopback,0);server.Start();
