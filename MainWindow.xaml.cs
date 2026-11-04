@@ -32,7 +32,7 @@ public partial class MainWindow : Window
         timer.Interval = TimeSpan.FromSeconds(2); timer.Tick += AutoTick; timer.Start(); Closing += OnClosing;
     }
     void LoadProfile() { people = storage.People(settings.Profile); assigned = Files.Read<List<Assignment>>(Path.Combine(Files.State, "rows-" + Files.Hash(settings.Profile) + ".json")) ?? new(); storage.Save(settings.Profile, assigned); InvalidateBatch(); UpdatePeople(); }
-    public void Reveal() { Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; WindowActivation.Record("reveal",Activate()); }
+    public void Reveal() { Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal; var active=Activate(); if(!active){var original=Topmost;Topmost=true;Topmost=original;active=Activate();} WindowActivation.Record("reveal",active); }
     public bool CanSwitchVersion=>cancel==null&&!committing&&skinInstaller==null&&OwnedWindows.Count==0;
     void OnClosing(object? sender,CancelEventArgs e){if(cancel!=null){e.Cancel=true;exitAfterTask=true;cancel.Cancel();Report("正在取消任务，完成后退出…");return;}settings.WindowWidth=RestoreBounds.Width;settings.WindowHeight=RestoreBounds.Height;Persist();timer.Stop();searchTimer.Stop();portraitCancel?.Cancel();portraitCancel?.Dispose();mappingIndex?.Dispose();tray?.Dispose();UnregisterHotKey(hwnd,24);storage.Dispose();Application.Current.Shutdown();}
     IntPtr Hook(IntPtr h, int msg, IntPtr w, IntPtr l, ref bool handled) { if (msg == 0x312 && w.ToInt32() == 24) { Reveal(); handled = true; } return IntPtr.Zero; }

@@ -13,7 +13,8 @@ $taskArchive = Join-Path $taskOutput ('FM24FaceAssistant-v' + $taskVersion + '-w
 try {
     & dotnet publish (Join-Path $taskProject 'FM24FaceAssistant.csproj') -c Release -r win-x64 --self-contained true -p:DebugType=None -p:DebugSymbols=false -o $taskPackage
     if ($LASTEXITCODE -ne 0) { throw '程序构建失败，未生成发布包。' }
-    Rename-Item -LiteralPath (Join-Path $taskPackage 'FM24FaceAssistant.exe') -NewName 'FM24头像助手.exe'
+    Copy-Item -LiteralPath (Join-Path $taskPackage 'FM24FaceAssistant.exe') -Destination (Join-Path $taskPackage 'FM24头像助手.exe')
+    if ((Get-FileHash -LiteralPath (Join-Path $taskPackage 'FM24FaceAssistant.exe')).Hash -ne (Get-FileHash -LiteralPath (Join-Path $taskPackage 'FM24头像助手.exe')).Hash) { throw '中英文启动文件内容不一致。' }
     foreach ($taskRequired in @('FM24头像助手.exe', 'FM24FaceAssistant.dll', 'coreclr.dll', 'README.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md',  'Bundled/FLAYUS skin 24 YUXIANde.zip', 'Bundled/FLAYUS skin 24 YUXIANde.json', 'Data/Names/LICENSE.txt', 'Data/Names/GNU_DOC.TXT', 'Data/Names/NOTICE')) {
         if (!(Test-Path -LiteralPath (Join-Path $taskPackage $taskRequired) -PathType Leaf)) { throw ('发布包缺少文件：' + $taskRequired) }
     }

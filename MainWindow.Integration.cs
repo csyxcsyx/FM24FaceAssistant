@@ -15,6 +15,7 @@ public partial class MainWindow
             ct.ThrowIfCancellationRequested();
             try{Integration.Protocol(true);}catch(Exception ex){LogError(ex);status="唤出协议未配置："+ex.Message+"\n";}
             try{
+                SkinEntry.RepairExisting(settings.Documents,skin,writer,enabled);
                 if(!SkinPackage.IsInstalled(skin)){status+="未找到配套皮肤。可安装随附皮肤，或选择已有目录；通用换图功能仍可使用。";return;}
                 if(enabled)SkinEntry.Install(skin,writer);else SkinEntry.Remove(skin,writer);
                 UidSkin.Install(skin,writer);

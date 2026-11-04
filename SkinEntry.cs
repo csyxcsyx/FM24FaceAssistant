@@ -21,7 +21,23 @@ public static class SkinEntry
     {
         var path=Path.GetFullPath(executable);
         if(!File.Exists(path)||!Path.GetExtension(path).Equals(".exe",StringComparison.OrdinalIgnoreCase))throw new IOException("找不到头像助手程序，请从完整程序目录重新安装入口。");
+        // Keep the pre-1.0.4 filename usable, including links already cached by FM.
+        var compatible=Path.Combine(Path.GetDirectoryName(path)!,"FM24FaceAssistant.exe");
+        if(File.Exists(compatible)&&File.ReadAllBytes(path).SequenceEqual(File.ReadAllBytes(compatible)))path=compatible;
         return new Uri(path).AbsoluteUri;
+    }
+    public static void RepairExisting(string documents,string selected,PatchWriter writer,bool enabled,string? executable=null)
+    {
+        var skins=Path.Combine(documents,"skins");if(!Directory.Exists(skins))return;
+        foreach(var skin in Directory.EnumerateDirectories(skins))
+        {
+            if(Path.GetFullPath(skin).Equals(Path.GetFullPath(selected),StringComparison.OrdinalIgnoreCase))continue;
+            var panels=Path.Combine(skin,"panels");if(!Directory.Exists(panels))continue;
+            if(!Directory.EnumerateFiles(panels,"*.xml",SearchOption.AllDirectories).Any(file=>{
+                var text=File.ReadAllText(file);return text.Contains("F24A")&&PatchWriter.Parse(text).Descendants().Any(Owned);
+            }))continue;
+            if(enabled)Install(skin,writer,executable);else Remove(skin,writer);
+        }
     }
     public static void Install(string skin,PatchWriter writer,string? executable=null)
     {
@@ -35,7 +51,7 @@ public static class SkinEntry
         var popup=Path.Combine(panels,"background_selector","workings.xml");if(File.Exists(popup)){Open(popup);foreach(var entry in documents[popup].Descendants().Where(Owned).ToList())entry.Remove();}
         var icon=Path.Combine(skin,"graphics","icons","24px","fm24_face_assistant_mask.png");Directory.CreateDirectory(Path.GetDirectoryName(icon)!);if(!File.Exists(icon))File.WriteAllBytes(icon,CreateIcon());
         anchor.AddBeforeSelf(new XElement("widget",new XAttribute("class","menubar_icon_button"),new XAttribute("id","F24A"),new XAttribute("appearance",(string?)anchor.Attribute("appearance")??"chrome/buttons/items/button"),new XAttribute("icon","icons/24px/fm24_face_assistant_mask"),new XAttribute("width","42"),new XElement("translation",new XAttribute("id","hint"),new XAttribute("type","use"),new XAttribute("value","Face Assistant")),new XElement("record",new XAttribute("id","primary_icon_properties"),new XAttribute("red_replacement","white")),new XElement("record",new XAttribute("id","click_event"),new XAttribute("event_id","OURL"),new XAttribute("url",launch))));
-        var changes=documents.Select(pair=>new Change(pair.Key,originals[pair.Key],pair.Value.ToString())).Where(c=>c.Before!=c.After).ToList();if(changes.Count>0)writer.Commit(changes,"皮肤入口");
+        var changes=documents.Select(pair=>new Change(pair.Key,originals[pair.Key],pair.Value.ToString())).Where(c=>!XNode.DeepEquals(XDocument.Parse(c.Before!),XDocument.Parse(c.After!))).ToList();if(changes.Count>0)writer.Commit(changes,"皮肤入口");
     }
     public static void Remove(string skin,PatchWriter writer)
     {
