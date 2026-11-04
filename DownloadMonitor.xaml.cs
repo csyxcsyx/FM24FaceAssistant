@@ -9,11 +9,11 @@ namespace FM24FaceAssistant;
 public partial class DownloadMonitor : Window
 {
     readonly DispatcherTimer timer = new(){Interval=TimeSpan.FromSeconds(1)};
-    readonly string assets=Path.Combine(Files.State,"library-download");
+    readonly string assets;
     readonly string? programRoot;
     bool starting;
     readonly System.Collections.Generic.HashSet<string> loggedEvents=new(); string lastConnection=""; long lastNetwork; DateTime lastSample=DateTime.UtcNow; double recentSpeed;
-    public DownloadMonitor(){InitializeComponent();var dir=new DirectoryInfo(AppContext.BaseDirectory);while(dir!=null&&!File.Exists(Path.Combine(dir.FullName,"download_ngregens.py")))dir=dir.Parent;programRoot=dir?.FullName;Directory.CreateDirectory(assets);timer.Tick+=(_,_)=>Refresh();Closed+=(_,_)=>timer.Stop();Refresh();timer.Start();}
+    public DownloadMonitor(){InitializeComponent();programRoot=LibraryPaths.FindProgramRoot();var settings=Files.Read<Settings>(Path.Combine(Files.State,"settings.json"));assets=LibraryPaths.DownloadDirectory(programRoot,Files.State,settings?.LibraryDownloadPath);Directory.CreateDirectory(assets);timer.Tick+=(_,_)=>Refresh();Closed+=(_,_)=>timer.Stop();Refresh();timer.Start();}
     void Event(string key,string message){if(!loggedEvents.Add(key))return;Log.AppendText($"[{DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(8)):HH:mm:ss}] {message}\n");Log.ScrollToEnd();}
     void Refresh()
     {

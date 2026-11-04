@@ -20,14 +20,12 @@ public partial class MainWindow
     }
     string LibraryRoot()
     {
-        for(var directory=new DirectoryInfo(AppContext.BaseDirectory);directory!=null;directory=directory.Parent)
-            if(File.Exists(Path.Combine(directory.FullName,"download_ngregens.py")))return directory.FullName;
-        throw new IOException("缺少图库下载组件 download_ngregens.py，请使用完整程序目录。");
+        return LibraryPaths.FindProgramRoot()??throw new IOException("缺少图库下载组件 download_ngregens.py，请使用完整程序目录。");
     }
     async void DownloadLibrary(object sender,RoutedEventArgs e)=>await Run(async ct=>
     {
         if(faces.Count>0&&File.Exists(faces[0].Path)){Report($"本地图库已就绪，共 {faces.Count:N0} 张，无需重复下载。");return;}
-        var root=LibraryRoot();var assets=Path.Combine(Files.State,"library-download");Directory.CreateDirectory(assets);var statusPath=Path.Combine(assets,"download-status.json");
+        var root=LibraryRoot();var assets=LibraryPaths.DownloadDirectory(root,Files.State,settings.LibraryDownloadPath);Directory.CreateDirectory(assets);var statusPath=Path.Combine(assets,"download-status.json");
         var python=await Task.Run(()=>PythonRuntime.Find(),ct);
         var start=python.Start(Path.Combine(root,"download_ngregens.py"),root);
         start.ArgumentList.Add("--managed");start.ArgumentList.Add("--state-dir");start.ArgumentList.Add(Files.State);start.ArgumentList.Add("--assets-dir");start.ArgumentList.Add(assets);

@@ -16,19 +16,27 @@ if (-not $pythonConsole) {
 if (-not $pythonConsole -or -not (Test-Path -LiteralPath $pythonConsole)) {
     throw '未找到 Python 3。请安装 Python，并确保 py 或 python 命令可用。'
 }
-& $pythonConsole -c 'import PIL' 2>$null
-if ($LASTEXITCODE -ne 0) { throw '图库下载需要 Pillow。请运行 python -m pip install Pillow。' }
+& $pythonConsole -c 'import sys, PIL; raise SystemExit(0 if sys.version_info >= (3, 10) else 2)' 2>$null
+if ($LASTEXITCODE -eq 2) { throw '图库下载需要 Python 3.10 或更新版本。' }
+if ($LASTEXITCODE -ne 0) { throw '图库下载需要 Pillow。请在 Python 3.10+ 环境运行 python -m pip install Pillow。' }
 
 $pythonWindowless = Join-Path (Split-Path -Parent $pythonConsole) 'pythonw.exe'
 if (-not (Test-Path -LiteralPath $pythonWindowless)) { $pythonWindowless = $pythonConsole }
-$stateDirectory = Join-Path $env:LOCALAPPDATA 'FM24FaceAssistant'
+$localDataRoot = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
+if ([string]::IsNullOrWhiteSpace($localDataRoot)) { throw '无法确定当前 Windows 用户的数据目录。' }
+$stateDirectory = Join-Path $localDataRoot 'FM24FaceAssistant'
 $locationFile = Join-Path $PSScriptRoot 'data-location.json'
 if (Test-Path -LiteralPath $locationFile) {
     $location = Get-Content -LiteralPath $locationFile -Raw | ConvertFrom-Json
     if ($location.Root) { $stateDirectory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot $location.Root)) }
 }
 New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
-$assetsDirectory = Join-Path $stateDirectory 'library-download'
+$legacyAssets = Join-Path $PSScriptRoot 'assets'
+$legacyFiles = @('download-status.json', 'NG_Regens_MainPack.zip', 'NG_Regens_MainPack.zip.part', 'library-report.json')
+$hasLegacyAssets = @($legacyFiles | Where-Object { Test-Path -LiteralPath (Join-Path $legacyAssets $_) }).Count -gt 0 -or (Test-Path -LiteralPath (Join-Path $legacyAssets 'NG_Regens_Library'))
+$settingsPath = Join-Path $stateDirectory 'settings.json'
+$savedDownloadPath = if (Test-Path -LiteralPath $settingsPath) { (Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json).LibraryDownloadPath } else { $null }
+$assetsDirectory = if ($savedDownloadPath) { [IO.Path]::GetFullPath($savedDownloadPath) } elseif ($hasLegacyAssets) { $legacyAssets } else { Join-Path $stateDirectory 'library-download' }
 New-Item -ItemType Directory -Path $assetsDirectory -Force | Out-Null
 
 # WMI owns the worker, keeping it independent of a terminal or monitor lifetime.

@@ -2,7 +2,7 @@
  <Border Background="#46405C" BorderBrush="#A99260" BorderThickness="1" CornerRadius="9" Padding="38,26" MinHeight="180">
   <Border.Effect><DropShadowEffect BlurRadius="24" ShadowDepth="4" Opacity="0.32"/></Border.Effect>
   <StackPanel VerticalAlignment="Center">
-   <TextBlock x:Name="Icon" FontFamily="Segoe Fluent Icons" Text="&#xE946;" FontSize="26" Foreground="#FFE1A3" TextAlignment="Center" Margin="0,0,0,12"/>
+   <Border x:Name="IconBadge" Width="34" Height="34" CornerRadius="17" BorderBrush="#FFE1A3" BorderThickness="2" HorizontalAlignment="Center" Margin="0,0,0,12"><TextBlock x:Name="Icon" Text="i" FontFamily="Segoe UI" FontSize="21" FontWeight="SemiBold" Foreground="#FFE1A3" TextAlignment="Center" VerticalAlignment="Center"/></Border>
    <TextBlock x:Name="Message" FontSize="20" LineHeight="30" TextAlignment="Center" TextWrapping="Wrap" Foreground="#FFFFFF" Margin="0" MaxHeight="240" TextTrimming="CharacterEllipsis" AutomationProperties.LiveSetting="Polite"/>
    <Button x:Name="LogButton" Content="查看错误日志" Click="OpenLog" Visibility="Collapsed" HorizontalAlignment="Center" Margin="0,14,0,0"/>
   </StackPanel>

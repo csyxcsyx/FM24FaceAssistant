@@ -17,6 +17,12 @@ static class SimplificationChecks
         foreach(var text in new[]{"2026/3/18","£2000","0","-123","4294967296","r-99999999999999999999"})check(RoleIdentityResolver.FromText(text,identities).Identity==null,"拒绝非UID或越界文本 "+text);
         var settings=JsonSerializer.Deserialize<Settings>("{\"Verification\":\"旧验证记录\"}",Files.Json)!;
         check(settings.ShowSkinEntry&&!JsonSerializer.Serialize(settings,Files.Json).Contains("Verification"),"旧设置兼容，默认启用入口且不再保存验证记录");
+        var installRoot=Path.Combine(root,"安装目录 with spaces","助手");var userState=Path.Combine(root,"profile-data","FM24FaceAssistant");
+        check(LibraryPaths.DownloadDirectory(installRoot,userState)==Path.Combine(userState,"library-download"),"新安装的图库数据不依赖程序目录");
+        var alternateDrive=Path.Combine(root,"第二磁盘","FM24 gallery");check(LibraryPaths.DownloadDirectory(installRoot,userState,alternateDrive)==alternateDrive,"用户可将图库下载定向到其他磁盘");
+        Directory.CreateDirectory(Path.Combine(installRoot,"assets"));File.WriteAllText(Path.Combine(installRoot,"assets","NG_Regens_MainPack.zip.part"),"checkpoint");
+        check(LibraryPaths.DownloadDirectory(installRoot,userState)==Path.Combine(installRoot,"assets"),"升级后继续使用旧图库下载断点");
+        check(LibraryPaths.HasDownloadData(Path.Combine(installRoot,"assets")),"旧断点存在时阻止误切换下载目录");
         var state=Path.Combine(root,"original-state");var graphics=Path.Combine(root,"original-graphics");var ext=Path.Combine(graphics,"external");Directory.CreateDirectory(ext);File.Copy(f.Path,Path.Combine(ext,"original.png"));
         var cfg=Path.Combine(ext,"config.xml");var first=p with{Id=123,Newgen=true};var special=p with{Id=999,Name="Known Manager",Kind="职员",Newgen=true};
         var original="<record><list id=\"maps\"><record from=\"original\" to=\"graphics/pictures/person/r-123/portrait\"/><record from=\"original\" to=\"graphics/pictures/person/r-999/portrait\"/></list></record>";File.WriteAllText(cfg,original);

@@ -25,13 +25,14 @@ public sealed record PythonRuntime(string Executable,string[] Prefix)
             {
                 var info=new ProcessStartInfo(candidate.Executable){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true};
                 foreach(var argument in candidate.Prefix)info.ArgumentList.Add(argument);
-                info.ArgumentList.Add("-c");info.ArgumentList.Add("import PIL; print('Pillow '+PIL.__version__)");
+                info.ArgumentList.Add("-c");info.ArgumentList.Add("import sys, PIL; print('Pillow '+PIL.__version__); raise SystemExit(0 if sys.version_info >= (3, 10) else 2)");
                 using var process=Process.Start(info);
                 if(process==null){errors.Add(candidate.Executable+" 无法启动");continue;}
                 var output=process.StandardOutput.ReadToEndAsync();var error=process.StandardError.ReadToEndAsync();
                 if(!process.WaitForExit(15000)){process.Kill(true);process.WaitForExit();errors.Add(candidate.Executable+" 检查超时");continue;}
                 var detail=error.GetAwaiter().GetResult().Trim();if(process.ExitCode==0)return candidate;
-                if(detail.Length==0)detail=output.GetAwaiter().GetResult().Trim();errors.Add(candidate.Executable+"："+detail);
+                if(process.ExitCode==2)detail="需要 Python 3.10 或更新版本。";
+                else if(detail.Length==0)detail=output.GetAwaiter().GetResult().Trim();errors.Add(candidate.Executable+"："+detail);
             }
             catch(Exception ex){errors.Add(candidate.Executable+"："+ex.Message);}
         }

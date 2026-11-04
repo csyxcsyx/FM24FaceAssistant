@@ -13,7 +13,7 @@ public partial class ToastNotice : UserControl
     public ToastNotice(){InitializeComponent();}
     public void ShowMessage(string text,bool error=false)
     {
-        lifetime?.Cancel();lifetime?.Dispose();lifetime=new();Message.Text=text;Message.ToolTip=text.Length>280?text:null;LogButton.Visibility=error?Visibility.Visible:Visibility.Collapsed;Icon.Text=error?"\uEA39":"\uE946";Visibility=Visibility.Visible;
+        lifetime?.Cancel();lifetime?.Dispose();lifetime=new();Message.Text=text;Message.ToolTip=text.Length>280?text:null;LogButton.Visibility=error?Visibility.Visible:Visibility.Collapsed;Icon.Text=error?"!":"i";IconBadge.BorderBrush=error?System.Windows.Media.Brushes.OrangeRed:System.Windows.Media.Brushes.Goldenrod;Icon.Foreground=IconBadge.BorderBrush;Visibility=Visibility.Visible;
         BeginAnimation(OpacityProperty,null);Opacity=1;if(SystemParameters.ClientAreaAnimation)BeginAnimation(OpacityProperty,new DoubleAnimation(0,1,TimeSpan.FromMilliseconds(180)));
         _=Expire(error?6000:Math.Clamp(1800+text.Length*28,2400,4800),lifetime.Token);
     }

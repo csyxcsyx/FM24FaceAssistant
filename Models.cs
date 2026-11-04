@@ -54,6 +54,7 @@ public class Settings
     public double WindowHeight {get;set;}=840;
     public string Documents { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Sports Interactive", "Football Manager 2024");
     public string Pack { get; set; } = "";
+    public string LibraryDownloadPath { get; set; } = "";
     public string Profile { get; set; } = "主存档";
     public string Hotkey { get; set; } = "Ctrl+Alt+F";
     public string RefreshKey { get; set; } = "Shift+R";

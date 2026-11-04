@@ -20,12 +20,14 @@ namespace FM24FaceAssistant;
 public partial class MainWindow
 {
     void ChooseDocuments(object sender,RoutedEventArgs e){var dialog=new OpenFolderDialog{Title="选择 FM24 用户资料目录"};if(dialog.ShowDialog()==true)DocsPath.Text=dialog.FolderName;}
+    void ChooseLibraryDownload(object sender,RoutedEventArgs e){var dialog=new OpenFolderDialog{Title="选择图库下载目录"};if(dialog.ShowDialog()==true)LibraryDownloadPath.Text=dialog.FolderName;}
+    void ResetLibraryDownload(object sender,RoutedEventArgs e)=>LibraryDownloadPath.Text="";
     async void ChooseSkin(object sender,RoutedEventArgs e){var dialog=new OpenFolderDialog{Title="选择 FLAYUS 皮肤目录"};if(dialog.ShowDialog()!=true)return;SkinPath.Text=dialog.FolderName;settings.Skin=dialog.FolderName;Persist();await Run(async ct=>{await SyncSkinPreference(ct);Report(SkinEntryState.Text);});}
     void Persist() { Files.Save(Path.Combine(Files.State, "settings.json"), settings); }
     async void SaveSettings(object sender,RoutedEventArgs e)
     {
         if(cancel!=null){Report("请等待当前任务结束，再保存设置。");return;}
-        try{Integration.ParseKey(HotkeyBox.Text);Integration.ParseKey(RefreshBox.Text);var documents=Path.GetFullPath(DocsPath.Text);if(!documents.Equals(settings.Documents,StringComparison.OrdinalIgnoreCase))InvalidateBatch();settings.Documents=documents;settings.Pack=PackPath.Text;settings.Hotkey=HotkeyBox.Text;settings.RefreshKey=RefreshBox.Text;settings.Skin=SkinPath.Text;settings.ShowSkinEntry=ShowSkinEntry.IsChecked==true;SetHotkey();Persist();await Run(async ct=>{await SyncSkinPreference(ct);Report("设置已保存。");});}catch(Exception ex){Report(ex.Message);}
+        try{Integration.ParseKey(HotkeyBox.Text);Integration.ParseKey(RefreshBox.Text);var documents=Path.GetFullPath(DocsPath.Text);if(!documents.Equals(settings.Documents,StringComparison.OrdinalIgnoreCase))InvalidateBatch();var selectedLibraryPath=string.IsNullOrWhiteSpace(LibraryDownloadPath.Text)?"":Path.GetFullPath(LibraryDownloadPath.Text.Trim());var root=LibraryPaths.FindProgramRoot();var currentLibraryPath=LibraryPaths.DownloadDirectory(root,Files.State,settings.LibraryDownloadPath);if(!string.Equals(selectedLibraryPath,settings.LibraryDownloadPath,StringComparison.OrdinalIgnoreCase)&&LibraryPaths.HasDownloadData(currentLibraryPath))throw new IOException("当前下载目录已有图库或断点。请先完成或继续现有任务，再更改目录；原文件和进度仍保留。");settings.Documents=documents;settings.Pack=PackPath.Text;settings.LibraryDownloadPath=selectedLibraryPath;settings.Hotkey=HotkeyBox.Text;settings.RefreshKey=RefreshBox.Text;settings.Skin=SkinPath.Text;settings.ShowSkinEntry=ShowSkinEntry.IsChecked==true;SetHotkey();Persist();await Run(async ct=>{await SyncSkinPreference(ct);Report("设置已保存。");});}catch(Exception ex){Report(ex.Message);}
     }
     void RefreshProfileChoices(){var names=storage.Profiles();if(!names.Contains(settings.Profile))names.Add(settings.Profile);ProfileChoice.ItemsSource=names;ProfileChoice.SelectedItem=settings.Profile;ProfileName.Text="";ProfileState.Text="当前使用："+settings.Profile;LoadSpecialPortraits();}
     async void SwitchProfile(object sender,RoutedEventArgs e){if(ProfileChoice.SelectedItem is not string name||name==settings.Profile){Report("已在使用此记录。");return;}await SwitchRecord(name);}
@@ -47,10 +49,9 @@ public partial class MainWindow
         ResourceSummary.Text=$"当前名单 {people.Count:N0} 人\n可用头像 {faces.Count:N0} 张\n存档记录：{settings.Profile}";
         try
         {
-            var directory=new DirectoryInfo(AppContext.BaseDirectory);
-            while(directory!=null&&!File.Exists(Path.Combine(directory.FullName,"download_ngregens.py")))directory=directory.Parent;
-            if(directory==null){LibraryDownloadStatus.Text="此程序目录下没有下载任务。";return;}
-            var path=Path.Combine(Files.State,"library-download","download-status.json");
+            var root=LibraryPaths.FindProgramRoot();
+            if(root==null){LibraryDownloadStatus.Text="此程序目录下没有下载任务。";return;}
+            var path=Path.Combine(LibraryPaths.DownloadDirectory(root,Files.State,settings.LibraryDownloadPath),"download-status.json");
             if(!File.Exists(path)){LibraryDownloadStatus.Text="尚未开始下载。可运行程序目录中的继续下载脚本。";return;}
             using var doc=System.Text.Json.JsonDocument.Parse(Files.ReadTextShared(path));var data=doc.RootElement;
             long Number(string key)=>data.TryGetProperty(key,out var value)&&value.TryGetInt64(out long number)?number:0;
