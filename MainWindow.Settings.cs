@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -44,19 +44,19 @@ public partial class MainWindow
     async void RebuildIndex(object sender,RoutedEventArgs e)=>await Run(ct=>ScanMappings(ct,true));
     void DiagnoseRefresh(object sender,RoutedEventArgs e){try{var path=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Sports Interactive","Football Manager 2024","Preferences","version 1","always_reload_skin.xml");var enabled=File.Exists(path)&&System.Xml.Linq.XDocument.Load(path).Descendants("boolean").Any(x=>(string?)x.Attribute("value")=="true");Report($"重载偏好：{(enabled?"已开启":"请在游戏偏好设置开启确认时重载皮肤")}；刷新键 {settings.RefreshKey}。若照片未变化，请在游戏中关闭图片缓存后重载皮肤。");}catch(Exception ex){Report(ex.Message);}}
     void ViewDownloadProgress(object sender,RoutedEventArgs e)=>UpdateDownloadStatus();
+    void UpdateResourceSummary(){if(ResourceSummary!=null)ResourceSummary.Text=$"当前名单 {people.Count:N0} 人\n可用头像 {faces.Count:N0} 张\n存档记录：{settings.Profile}";}
     void UpdateDownloadStatus()
     {
-        ResourceSummary.Text=$"当前名单 {people.Count:N0} 人\n可用头像 {faces.Count:N0} 张\n存档记录：{settings.Profile}";
+        UpdateResourceSummary();
         try
         {
             var root=LibraryPaths.FindProgramRoot();
-            if(root==null){LibraryDownloadStatus.Text="此程序目录下没有下载任务。";return;}
-            var path=Path.Combine(LibraryPaths.DownloadDirectory(root,Files.State,settings.LibraryDownloadPath),"download-status.json");
-            if(!File.Exists(path)){LibraryDownloadStatus.Text="尚未开始下载。可运行程序目录中的继续下载脚本。";return;}
+            var path=Path.Combine(LibraryPaths.DownloadDirectory(root,Files.State,settings.LibraryDownloadPath,settings.Pack),"download-status.json");
+            if(!File.Exists(path)){LibraryDownloadStatus.Text="点击“下载 / 接续图库”即可下载官方头像包，无需安装其他环境。";return;}
             using var doc=System.Text.Json.JsonDocument.Parse(Files.ReadTextShared(path));var data=doc.RootElement;
             long Number(string key)=>data.TryGetProperty(key,out var value)&&value.TryGetInt64(out long number)?number:0;
             var stage=data.GetProperty("stage").GetString();
-            if(stage=="complete"){LibraryDownloadStatus.Text=$"图库已就绪";return;}
+            if(stage=="complete"){LibraryDownloadStatus.Text=faces.Count>0?$"已加载 {faces.Count:N0} 张头像":"下载目录已有完成记录，点击“下载 / 接续图库”校验并加载。";return;}
             if(stage=="cancelled"){LibraryDownloadStatus.Text="已保存进度，点击下载 / 接续图库可继续。";return;}
             if(stage=="failed"){LibraryDownloadStatus.Text="下载未完成："+data.GetProperty("error").GetString();return;}
             if(stage=="indexing"){LibraryDownloadStatus.Text=$"校验并建立索引：{Number("processed"):N0} / {Number("total_images"):N0} 张";return;}

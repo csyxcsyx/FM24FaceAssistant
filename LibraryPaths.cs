@@ -12,9 +12,14 @@ public static class LibraryPaths
         return System.AppContext.BaseDirectory;
     }
 
-    public static string DownloadDirectory(string? programRoot,string state,string? preferredDirectory=null)
+    public static string DownloadDirectory(string? programRoot,string state,string? preferredDirectory=null,string? libraryRoot=null)
     {
         if(!string.IsNullOrWhiteSpace(preferredDirectory))return Path.GetFullPath(preferredDirectory);
+        if(!string.IsNullOrWhiteSpace(libraryRoot))
+        {
+            var library=Path.TrimEndingDirectorySeparator(Path.GetFullPath(libraryRoot));
+            if(Path.GetFileName(library.TrimEnd(Path.DirectorySeparatorChar)).Equals("NG_Regens_Library",System.StringComparison.OrdinalIgnoreCase)&&Directory.Exists(library)&&Path.GetDirectoryName(library) is string existing)return existing;
+        }
         if(!string.IsNullOrWhiteSpace(programRoot))
         {
             var legacy=Path.Combine(programRoot,"assets");

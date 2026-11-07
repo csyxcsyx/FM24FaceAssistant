@@ -18,7 +18,8 @@ namespace FM24FaceAssistant;
 
 public sealed record LibraryDownloadOptions(Uri Source,long ExpectedBytes,int Attempts=8,int RetryDelayMilliseconds=5000,int StallMilliseconds=90000)
 {
-    public static LibraryDownloadOptions Official {get;}=new(new Uri("https://download.ngregens.org/NG_Regens_MainPack.zip"),7313137436);
+    // Zero means discover the current release length from the server, not a pinned old ZIP size.
+    public static LibraryDownloadOptions Official {get;}=new(new Uri("https://download.ngregens.org/NG_Regens_MainPack.zip"),0);
 }
 public sealed record LibraryProgress(string stage,string task_id,int pid,string updated,long total=0,long downloaded=0,long network_received=0,long bytes_per_second=0,long eta_seconds=0,int attempt=0,long processed=0,long total_images=0,long unique_images=0,long unique_pixels=0,string? error=null,string? library=null);
 public sealed record LibraryDownloadResult(string Library,int Count);
@@ -67,21 +68,23 @@ public sealed class LibraryDownloadService
             // A complete legacy library may have had its ZIP removed to save disk space.
             if(!File.Exists(archive)&&!File.Exists(archive+".part")&&File.Exists(Path.Combine(library,"faces.json")))
             {
-                var old=Files.Read<List<Face>>(Path.Combine(library,"faces.json"))??new();
-                if(old.Count==0)throw new InvalidDataException("图库清单为空，请选择完整图库或重新下载。");
+                List<Face> old;
+                try{old=Files.Read<List<Face>>(Path.Combine(library,"faces.json"))??new();}catch(JsonException){old=new();}
+                bool reusable=HasCompletionReport(assets,old.Count);
                 var verified=new List<Face>();
-                foreach(var face in old)
+                foreach(var face in reusable?old:new List<Face>())
                 {
                     ct.ThrowIfCancellationRequested();var path=SafeTarget(library,Path.GetRelativePath(library,Path.GetFullPath(Path.Combine(library,face.Path))));
                     if(!Catalog.IsFm24Face(face))continue;
-                    if(!File.Exists(path)||Digest(path)!=face.Hash)throw new InvalidDataException("已有图库图片缺失或损坏，请选择完整图库或保留原压缩包后重试。");
-                    var visual=Catalog.PixelDigest(path);verified.Add(face with{Path=path,VisualHash=face.VisualHash??visual});
+                    if(!File.Exists(path)||Digest(path)!=face.Hash){reusable=false;break;}
+                    var visual=Catalog.PixelDigest(path);verified.Add(face with{Path=path,VisualHash=visual});
                     if(verified.Count%128==0)Publish(status with{stage="indexing",processed=verified.Count,total_images=old.Count});
                 }
-                if(verified.Count==0)throw new InvalidDataException("已有图库没有 FM24 可用头像。");
+                if(reusable&&verified.Count>0){
                 ct.ThrowIfCancellationRequested();Files.Save(Path.Combine(state,"catalog.json"),verified);
                 Publish(status with{stage="complete",processed=verified.Count,total_images=verified.Count,unique_pixels=verified.Select(f=>f.UniqueKey).Distinct().Count(),library=library});
                 return new(library,verified.Count);
+                }
             }
             await Download(assets,archive,ct,s=>Publish(s),()=>status).ConfigureAwait(false);
             var rows=Extract(assets,archive,ct,s=>Publish(s),()=>status);
@@ -101,6 +104,14 @@ public sealed class LibraryDownloadService
         }
         finally{lease.Unlock(0,1);}
     }
+    bool HasCompletionReport(string assets,int count)
+    {
+        if(count<=0)return false;
+        try{
+            using var report=JsonDocument.Parse(File.ReadAllText(Path.Combine(assets,"library-report.json")));var data=report.RootElement;
+            return data.ValueKind==JsonValueKind.Object&&data.TryGetProperty("source",out var source)&&source.ValueKind==JsonValueKind.String&&source.GetString()==options.Source.AbsoluteUri&&data.TryGetProperty("total_images",out var total)&&total.ValueKind==JsonValueKind.Number&&total.TryGetInt32(out var images)&&images==count&&data.TryGetProperty("archive_bytes",out var bytes)&&bytes.ValueKind==JsonValueKind.Number&&bytes.TryGetInt64(out var size)&&size>0;
+        }catch(Exception ex) when(ex is IOException||ex is JsonException){return false;}
+    }
     void CheckSpace(string directory,long bytes)
     {
         if(spaceCheck!=null){spaceCheck(directory,bytes);return;}
@@ -111,7 +122,7 @@ public sealed class LibraryDownloadService
     {
         if(File.Exists(archive))
         {
-            if(new FileInfo(archive).Length==options.ExpectedBytes)return;
+            if(options.ExpectedBytes<=0||new FileInfo(archive).Length==options.ExpectedBytes)return;
             throw new InvalidDataException("原压缩包大小与当前图库不符，已保留文件。请选择其他下载目录或完整的当前图库。");
         }
         var part=archive+".part";var identityPath=Path.Combine(assets,"transfer-identity.json");
@@ -121,15 +132,15 @@ public sealed class LibraryDownloadService
         for(int attempt=1;attempt<=options.Attempts;attempt++)
         {
             ct.ThrowIfCancellationRequested();var existing=File.Exists(part)?new FileInfo(part).Length:0;
-            if(existing>options.ExpectedBytes)throw new InvalidDataException("下载片段大于当前图库，未覆盖旧文件。请改选下载位置。");
-            if(existing==options.ExpectedBytes){File.Move(part,archive);return;}
-            CheckSpace(assets,checked(options.ExpectedBytes-existing+1024L*1024*1024));
+            if(options.ExpectedBytes>0&&existing>options.ExpectedBytes)throw new InvalidDataException("下载片段大于当前图库，未覆盖旧文件。请改选下载位置。");
+            if(options.ExpectedBytes>0&&existing==options.ExpectedBytes){File.Move(part,archive);return;}
+            CheckSpace(assets,checked(Math.Max(0,options.ExpectedBytes-existing)+1024L*1024*1024));
             publish(current() with{stage="downloading",downloaded=existing,network_received=0,attempt=attempt});
             try
             {
                 LibraryTransferIdentity? identity=null;
                 try{identity=Files.Read<LibraryTransferIdentity>(identityPath);}catch(JsonException){ }
-                bool range=existing>0&&identity?.Source==options.Source.AbsoluteUri&&identity.Total==options.ExpectedBytes&&EntityTagHeaderValue.TryParse(identity.ETag,out var tag)&&!tag.IsWeak;
+                bool range=existing>0&&identity?.Source==options.Source.AbsoluteUri&&identity.Total>existing&&(options.ExpectedBytes<=0||identity.Total==options.ExpectedBytes)&&EntityTagHeaderValue.TryParse(identity.ETag,out var tag)&&!tag.IsWeak;
                 using var request=new HttpRequestMessage(HttpMethod.Get,options.Source);
                 request.Headers.UserAgent.ParseAdd("FM24FaceAssistant/"+typeof(LibraryDownloadService).Assembly.GetName().Version);
                 if(range){request.Headers.Range=new RangeHeaderValue(existing,null);request.Headers.IfRange=new RangeConditionHeaderValue(EntityTagHeaderValue.Parse(identity!.ETag));}
@@ -142,9 +153,14 @@ public sealed class LibraryDownloadService
                     response.EnsureSuccessStatusCode();
                     bool partial=response.StatusCode==HttpStatusCode.PartialContent;
                     var etag=response.Headers.ETag;
-                    if(partial&&(!range||response.Content.Headers.ContentRange?.From!=existing||response.Content.Headers.ContentRange?.To!=options.ExpectedBytes-1||response.Content.Headers.ContentRange?.Length!=options.ExpectedBytes||etag?.ToString()!=identity!.ETag))throw new InvalidDataException("服务器返回了不一致的断点数据，已保留旧进度。");
-                    var expected=options.ExpectedBytes-(partial?existing:0);
-                    if(response.Content.Headers.ContentLength is long size&&size!=expected)throw new InvalidDataException("官方图库大小已变化，未混合新旧版本。请改选下载位置后重试。");
+                    var total=partial?response.Content.Headers.ContentRange?.Length:response.Content.Headers.ContentLength;
+                    if(total is not >0)throw new InvalidDataException("图库服务器未提供有效的文件大小，请稍后重试。");
+                    if(partial&&(!range||response.Content.Headers.ContentRange?.From!=existing||response.Content.Headers.ContentRange?.To!=total-1||total!=identity!.Total||etag?.ToString()!=identity.ETag))throw new InvalidDataException("服务器返回了不一致的断点数据，已保留旧进度。");
+                    if(options.ExpectedBytes>0&&total!=options.ExpectedBytes)throw new InvalidDataException("图库大小与指定版本不符，已保留原文件。");
+                    if(existing>total)throw new InvalidDataException("已有片段大于服务器当前文件，已保留。请改选下载位置。");
+                    if(response.Content.Headers.ContentLength is long size&&size!=total-(partial?existing:0))throw new InvalidDataException("图库响应长度不一致，已保留原文件。");
+                    CheckSpace(assets,checked(total.Value-existing+1024L*1024*1024));
+                    publish(current() with{total=total.Value});
                     await using var input=await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
                     using var output=new FileStream(part,FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.Read,262144);
                     var buffer=ArrayPool<byte>.Shared.Rent(262144);var compare=ArrayPool<byte>.Shared.Rent(262144);
@@ -162,21 +178,21 @@ public sealed class LibraryDownloadService
                                 catch(IOException ex){throw new HttpRequestException("传输中断。",ex);}
                             }
                             if(read==0)break;
-                            if(received+read>options.ExpectedBytes)throw new InvalidDataException("服务器数据超过预计大小，已停止写入。");
+                            if(received+read>total.Value)throw new InvalidDataException("服务器数据超过预计大小，已停止写入。");
                             if(received==0&&(read<4||buffer[0]!=80||buffer[1]!=75||buffer[2]!=3||buffer[3]!=4))throw new InvalidDataException("下载响应不是有效的 ZIP 图库。");
                             int prefix=(int)Math.Min(read,Math.Max(0,existing-received));
                             output.Position=received;
                             if(prefix>0){output.ReadExactly(compare.AsSpan(0,prefix));if(!buffer.AsSpan(0,prefix).SequenceEqual(compare.AsSpan(0,prefix)))throw new InvalidDataException("服务器内容与已有下载片段不同，已保留旧文件。请改选下载位置。");}
                             output.Position=received+prefix;output.Write(buffer,prefix,read-prefix);received+=read;network+=read;
-                            if(!recorded&&received>=existing&&etag!=null&&!etag.IsWeak){Files.Save(identityPath,new LibraryTransferIdentity(options.Source.AbsoluteUri,etag.ToString(),options.ExpectedBytes));recorded=true;}
+                            if(!recorded&&received>=existing&&etag!=null&&!etag.IsWeak){Files.Save(identityPath,new LibraryTransferIdentity(options.Source.AbsoluteUri,etag.ToString(),total.Value));recorded=true;}
                             if(watch.ElapsedMilliseconds-lastReport>=500)
                             {
                                 output.Flush();var speed=(long)(network/Math.Max(.01,watch.Elapsed.TotalSeconds));
-                                publish(current() with{stage="downloading",downloaded=Math.Max(existing,received),network_received=network,bytes_per_second=speed,eta_seconds=speed>0?(options.ExpectedBytes-received)/speed:0});lastReport=watch.ElapsedMilliseconds;
+                                publish(current() with{stage="downloading",downloaded=Math.Max(existing,received),network_received=network,bytes_per_second=speed,eta_seconds=speed>0?(total.Value-received)/speed:0});lastReport=watch.ElapsedMilliseconds;
                             }
                         }
                         output.Flush(true);
-                        if(received!=options.ExpectedBytes)throw new EndOfStreamException("连接提前结束，已保存下载片段。");
+                        if(received!=total.Value)throw new EndOfStreamException("连接提前结束，已保存下载片段。");
                     }
                     finally{output.Flush(true);ArrayPool<byte>.Shared.Return(buffer);ArrayPool<byte>.Shared.Return(compare);}
                 }
@@ -201,7 +217,7 @@ public sealed class LibraryDownloadService
         SQLitePCL.Batteries_V2.Init();using var db=new SqliteConnection(new SqliteConnectionStringBuilder{DataSource=Path.Combine(assets,"native-index-checkpoint.sqlite")}.ToString());db.Open();
         using(var cmd=db.CreateCommand()){cmd.CommandText="CREATE TABLE IF NOT EXISTS images(name TEXT PRIMARY KEY,version TEXT,crc INTEGER,size INTEGER,mtime INTEGER,row_json TEXT)";cmd.ExecuteNonQuery();}
         var info=new FileInfo(archive);var version=$"native-v1:{info.Length}:{info.LastWriteTimeUtc.Ticks}";var rows=new List<Face>();var pixels=new HashSet<string>();
-        publish(current() with{stage="indexing",downloaded=options.ExpectedBytes,processed=0,total_images=images.Count,error=null});
+        publish(current() with{stage="indexing",total=info.Length,downloaded=info.Length,processed=0,total_images=images.Count,error=null});
         var checkpoint=db.BeginTransaction();
         try
         {

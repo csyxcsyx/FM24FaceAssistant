@@ -76,10 +76,32 @@ static class LibraryDownloadChecks
         var rows=Files.Read<List<Face>>(Path.Combine(assets,"state;中文","catalog.json"))!;
         check(result.Count==3&&rows.Select(f=>f.UniqueKey).Distinct().Count()==2&&rows.All(f=>File.Exists(f.Path)),"本地 HTTP 下载解压索引与像素去重完整成功");
         check(Files.Read<LibraryProgress>(Path.Combine(assets,"download-status.json"))?.stage=="complete","下载成功状态包含当前任务标识");
+        var dynamicAssets=Assets(root,"native-current-size");
+        await Run(Service(server,0),dynamicAssets);
+        check(new FileInfo(Path.Combine(dynamicAssets,"NG_Regens_MainPack.zip")).Length==data.Length&&Files.Read<LibraryProgress>(Path.Combine(dynamicAssets,"download-status.json"))?.total==data.Length,"官方包大小从响应读取，不固定旧版本字节数");
+        var dynamicPrefix=Assets(root,"native-dynamic-prefix");File.WriteAllBytes(Path.Combine(dynamicPrefix,"NG_Regens_MainPack.zip.part"),data[..50]);await Run(Service(server,0),dynamicPrefix);
+        check(File.ReadAllBytes(Path.Combine(dynamicPrefix,"NG_Regens_MainPack.zip")).SequenceEqual(data),"动态大小与旧版无元数据片段兼容，服务器忽略 Range 仍完整续传");
+        using(var dynamicRange=new Server(req=>req.Contains("Range: bytes=50-",StringComparison.OrdinalIgnoreCase)?new(data[50..],Code:206,ContentRange:$"bytes 50-{data.Length-1}/{data.Length}"):new(data)))
+        {
+            var a=Assets(root,"native-dynamic-range");File.WriteAllBytes(Path.Combine(a,"NG_Regens_MainPack.zip.part"),data[..50]);Files.Save(Path.Combine(a,"transfer-identity.json"),new LibraryTransferIdentity(dynamicRange.Url.AbsoluteUri,"\"fixture-v1\"",data.Length));await Run(Service(dynamicRange,0),a);
+            check(dynamicRange.Requests.Any(r=>r.Contains("Range: bytes=50-")),"动态大小仍用强 ETag 与总长度确认 Range 响应");
+        }
+        using(var updatedServer=new Server(_=>new(Zip(many:3),ETag:"\"new-release\"")))
+        {
+            var a=Assets(root,"native-updated-release");File.WriteAllBytes(Path.Combine(a,"NG_Regens_MainPack.zip.part"),data[..4]);Files.Save(Path.Combine(a,"transfer-identity.json"),new LibraryTransferIdentity(updatedServer.Url.AbsoluteUri,"\"old-release\"",data.Length));
+            check((await Run(Service(updatedServer,0),a)).Count==6,"官方发布新版时接受新总长度，通过前缀校验复用安全数据");
+        }
         var previousState=Files.State;try{Files.State=Path.Combine(assets,"state;中文");check(FaceLibraryStore.Load(default,_=>{}).Count==3,"下载结束后可立即加载图库，支持含分号的用户目录");using var store=new Storage(Files.State);check(store.Profiles().Count==0,"用户数据库路径使用连接串转义");}finally{Files.State=previousState;}
         // Completed legacy images without an archive can be reused without any network.
         File.Delete(Path.Combine(assets,"NG_Regens_MainPack.zip"));var requestCount=server.Requests.Count;await Run(Service(server,data.Length),assets);
         check(server.Requests.Count==requestCount,"旧图库完整图片无需重新下载");
+        var unproven=Assets(root,"native-unproven-library");var unprovenLibrary=Path.Combine(unproven,"NG_Regens_Library");Directory.CreateDirectory(unprovenLibrary);Files.Save(Path.Combine(unprovenLibrary,"faces.json"),rows);
+        var beforeUnproven=server.Requests.Count;await Run(Service(server,0),unproven);
+        check(server.Requests.Count>beforeUnproven,"仅存在图片清单但没有下载完成报告时仍会下载官方包");
+        File.Delete(Path.Combine(unproven,"NG_Regens_MainPack.zip"));File.WriteAllText(Path.Combine(unproven,"library-report.json"),"{\"source\":true,\"total_images\":\"3\",\"archive_bytes\":\"999\"}");
+        beforeUnproven=server.Requests.Count;await Run(Service(server,0),unproven);check(server.Requests.Count>beforeUnproven,"损坏或字段类型错误的完成报告不会阻止重新下载");
+        var damaged=Path.Combine(assets,"NG_Regens_Library","NG_Regens","China","a.png");File.WriteAllText(damaged,"missing pixels");var beforeRepair=server.Requests.Count;await Run(Service(server,0),assets);
+        check(server.Requests.Count>beforeRepair&&File.ReadAllBytes(damaged).SequenceEqual(Png()),"旧图库损坏且 ZIP 已删除时自动下载修复，不反复提示本地已就绪");
         assets=Assets(root,"native-prefix");var prefix=data[..50];File.WriteAllBytes(Path.Combine(assets,"NG_Regens_MainPack.zip.part"),prefix);await Run(Service(server,data.Length),assets);
         check(File.ReadAllBytes(Path.Combine(assets,"NG_Regens_MainPack.zip")).SequenceEqual(data),"旧版片段通过前缀校验继续写入且不丢进度");
         assets=Assets(root,"native-changed");File.WriteAllBytes(Path.Combine(assets,"NG_Regens_MainPack.zip.part"),new byte[50]);
@@ -125,6 +147,10 @@ static class LibraryDownloadChecks
         File.WriteAllText(kept,"damaged");await Run(Service(server,many.Length),assets);check(File.ReadAllBytes(kept).SequenceEqual(Png()),"检查点中的已修改图片自动重新解压修复");
         assets=Assets(root,"native-space");long required=0;
         check(await Fails(async()=>await Run(Service(server,5_000_000_000,(_,size)=>{required=size;throw new IOException("模拟空间不足");}),assets))&&required>int.MaxValue,"大于 4 GB 的磁盘空间计算使用 64 位数值");
+        using(var bigServer=new Server(_=>new(data,Length:5_000_000_000)))
+        {
+            long dynamicRequired=0;check(await Fails(async()=>await Run(Service(bigServer,0,(_,size)=>{if(size>int.MaxValue){dynamicRequired=size;throw new IOException("模拟新包空间不足");}}),Assets(root,"native-dynamic-space")))&&dynamicRequired>5_000_000_000,"从服务器读取的大于 4 GB 长度也在写入前检查磁盘空间");
+        }
         assets=Assets(root,"native-locked");using(var lease=new FileStream(Path.Combine(assets,"download.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.ReadWrite))
         {lease.Lock(0,1);check(await Fails(async()=>await Run(Service(server,data.Length),assets)),"旧版下载字节锁存在时拒绝并行写入");lease.Unlock(0,1);}
         assets=Assets(root,"native-stall");using(var slow=new Server(_=>new(data,Delay:300)))check(await Fails(async()=>await Run(Service(slow,data.Length,stall:50),assets)),"接收数据停滞超时可重试并显示错误");

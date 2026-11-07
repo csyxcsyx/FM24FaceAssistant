@@ -8,6 +8,7 @@ public partial class MainWindow
 {
     async Task SyncSkinPreference(CancellationToken ct)
     {
+        if(!enableDesktopIntegration)return;
         var found=SkinPackage.FindInstalled(settings.Documents,SkinPath.Text);
         if(found!=null){SkinPath.Text=found;if(settings.Skin!=found){settings.Skin=found;Persist();}}
         var skin=SkinPath.Text;var enabled=settings.ShowSkinEntry;string status="";

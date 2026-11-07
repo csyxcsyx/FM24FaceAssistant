@@ -14,6 +14,7 @@ public record Mapping(string Config, string From, string Target, string? Image) 
 public static class Catalog
 {
     public static bool IsFm24Face(Face face) => face.Kind == "职员" || (face.Kind == "球员" && face.Gender == "男");
+    public static bool IsLibraryFace(Face face,string? root=null)=>IsFm24Face(face)&&(RegionResolver.IsKnownGroup(face.Group)||(!string.IsNullOrWhiteSpace(root)&&File.Exists(Path.Combine(root,"faces.json"))));
     public static List<Mapping> Scan(string graphics, CancellationToken ct)
     {
         var list = new List<Mapping>(); if (!Directory.Exists(graphics)) return list;
@@ -39,6 +40,7 @@ public static class Catalog
         {
             var rows = Files.Read<List<Face>>(manifest) ?? new(); var verified = new List<Face>();
             foreach(var f in rows.Where(IsFm24Face)) { ct.ThrowIfCancellationRequested(); var path=Path.GetFullPath(Path.Combine(root,f.Path)); verified.Add(f with {Path=path, Hash=Digest(path), VisualHash=PixelDigest(path)}); if(verified.Count%500==0)progress?.Report($"校验图库：{verified.Count:N0} 张"); }
+            if(verified.Count==0)throw new IOException("图库清单中没有 FM24 可用头像，请下载官方图库或选择完整素材。");
             return verified;
         }
         var list = new List<Face>(); int count = 0;
@@ -50,8 +52,10 @@ public static class Catalog
             string gender = lower.Contains("female") || lower.Contains("women") || dirs[..^1].Any(d=>d.Equals("WF",StringComparison.OrdinalIgnoreCase)) ? "女" : lower.Contains("male") || lower.Contains("men") ? "男" : kind == "球员" ? "男" : "未知";
             if(kind=="球员" && gender=="女")continue;
             var group = dirs.Length > 1 ? dirs[^2] : "未分类";
+            if(!RegionResolver.IsKnownGroup(group))continue;
             list.Add(new(path, group, kind, gender, Digest(path),PixelDigest(path))); if (++count % 500 == 0) progress?.Report($"索引图库：{count:N0} 张");
         }
+        if(list.Count==0)throw new IOException("此目录没有可识别的 NG_Regens 头像分类。皮肤、图标和球衣图片不能用作头像图库；请点击“下载 / 接续图库”，或选择解压后的 NG_Regens 文件夹。");
         return list;
     }
     static string Digest(string path) { using var stream = File.OpenRead(path); return Convert.ToHexString(SHA256.HashData(stream)); }

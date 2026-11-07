@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -25,7 +25,7 @@ public partial class MainWindow
     async void ApplyRefresh(object sender, RoutedEventArgs e) => await ApplySelected(true);
     async Task ApplySelected(bool refresh) { if (PeopleList.SelectedItem is not Person p || pending == null) { Report("请先选择人物和待应用头像。"); return; }  var choice = new Assignment(p, pending, LockFace.IsChecked == true, "手动指定", PersonSearch.RequestedKeys(p,Search.Text) ?? assigned.FirstOrDefault(a=>a.Person.Identity==p.Identity)?.TargetKeys); await Run(async ct => { var rows = assigned.Where(a => a.Person.Id != p.Id).Append(choice).ToList(); await ApplyRows(rows, ct); if (refresh) { try { await Integration.RefreshAsync(settings.RefreshKey); Report("头像已应用，刷新指令已发送。"); } catch(Exception ex) { Report("头像已应用；刷新未完成："+ex.Message); } } }); }
     async void RestorePerson(object sender, RoutedEventArgs e) { if (PeopleList.SelectedItem is not Person p) return; await Run(ct => ApplyRows(assigned.Where(a => a.Person.Id != p.Id).ToList(), ct)); }
-    async void ChoosePack(object sender, RoutedEventArgs e) { var dlg = new OpenFolderDialog { Title = "选择 NG_Regens 图库" }; if (dlg.ShowDialog() != true) return; PackPath.Text = dlg.FolderName; settings.Pack = dlg.FolderName; await Run(async ct => { faces = await Task.Run(() => Catalog.Faces(settings.Pack, ct, new Progress<string>(Report))); Files.Save(Path.Combine(Files.State, "catalog.json"), faces); CanonicalizeAssignments(); LoadSpecialPortraits(); InvalidateBatch(); Persist(); UpdateGallery(); Report($"图库索引完成：{faces.Count:N0} 张，{faces.Select(f => f.Group).Distinct().Count()} 个分类，{faces.Select(f => f.UniqueKey).Distinct().Count():N0} 张不重复图片。"); }); }
+    async void ChoosePack(object sender, RoutedEventArgs e) { var dlg = new OpenFolderDialog { Title = "选择 NG_Regens 图库" }; if (dlg.ShowDialog() != true) return; await Run(async ct => { var verified = await Task.Run(() => Catalog.Faces(dlg.FolderName, ct, new Progress<string>(Report))); Files.Save(Path.Combine(Files.State, "catalog.json"), verified); faces=verified;settings.Pack=dlg.FolderName;PackPath.Text=dlg.FolderName; CanonicalizeAssignments(); LoadSpecialPortraits(); InvalidateBatch(); Persist(); UpdateGallery(); UpdateDownloadStatus(); Report($"图库索引完成：{faces.Count:N0} 张，{faces.Select(f => f.Group).Distinct().Count()} 个分类，{faces.Select(f => f.UniqueKey).Distinct().Count():N0} 张不重复图片。"); }); }
     readonly PopulationChangeGate populationGate=new(); bool probing;
     void AutoScanChanged(object sender,RoutedEventArgs e){if(!ready)return;settings.Auto=BatchView.AutomaticCheck.IsChecked==true;populationGate.Reset();Persist();}
     async void AutoTick(object? sender,EventArgs e)
