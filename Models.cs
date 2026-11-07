@@ -71,6 +71,20 @@ public static class Files
     public static string Hash(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
     public static void Atomic(string path, string text) { Directory.CreateDirectory(Path.GetDirectoryName(path)!); var temp = path + ".tmp"; File.WriteAllText(temp, text, Encoding.UTF8); for(int retry=0;;retry++){try{File.Move(temp,path,true);break;}catch(Exception e) when(retry<39 && (e is IOException || e is UnauthorizedAccessException)){System.Threading.Thread.Sleep(25);}} }
     public static string ReadTextShared(string path) { using var stream=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete); using var reader=new StreamReader(stream);return reader.ReadToEnd(); }
-    public static T? Read<T>(string path) => File.Exists(path) ? JsonSerializer.Deserialize<T>(ReadTextShared(path), Json) : default;
-    public static void Save<T>(string path, T value) => Atomic(path, JsonSerializer.Serialize(value, Json));
+    public static T? Read<T>(string path)
+    {
+        if(!File.Exists(path))return default;
+        using var stream=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete,65536);
+        Span<byte> prefix=stackalloc byte[4];int count=stream.ReadAtLeast(prefix,4,false);stream.Position=0;
+        // Preserve imports from older Windows tools that wrote UTF-16/UTF-32 JSON.
+        bool unicode=count>=2&&((prefix[0]==255&&prefix[1]==254)||(prefix[0]==254&&prefix[1]==255))||count>=4&&prefix[0]==0&&prefix[1]==0&&prefix[2]==254&&prefix[3]==255;
+        if(unicode){using var reader=new StreamReader(stream);return JsonSerializer.Deserialize<T>(reader.ReadToEnd(),Json);}
+        return JsonSerializer.Deserialize<T>(stream,Json);
+    }
+    public static void Save<T>(string path,T value)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);var temp=path+".tmp";
+        using(var stream=new FileStream(temp,FileMode.Create,FileAccess.Write,FileShare.None,65536))JsonSerializer.Serialize(stream,value,Json);
+        for(int retry=0;;retry++){try{File.Move(temp,path,true);break;}catch(Exception ex) when(retry<39&&(ex is IOException||ex is UnauthorizedAccessException)){System.Threading.Thread.Sleep(25);}}
+    }
 }

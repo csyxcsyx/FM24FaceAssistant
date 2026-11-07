@@ -23,6 +23,7 @@ static class LibrarySelectionChecks
             var rows=Catalog.Faces(library,default);check(rows.Count==4&&rows.Any(f=>f.Kind=="职员"&&f.Gender=="女"),"已解压的有效地区头像目录仍可手动索引");
             check(rows.Count(f=>f.Kind=="职员"&&f.Group=="China"&&f.Gender is "男" or "女")==2,"官方 Staff/地区/性别 目录可手动索引，不把性别文件夹误当作地区");
             Files.Save(Path.Combine(state,"catalog.json"),rows);check(FaceLibraryStore.Load(default,_=>{},library).Count==4,"正确图库替换误选目录后可立即加载");
+            var mixed=Path.Combine(library,"MixedRace");Directory.CreateDirectory(mixed);File.WriteAllBytes(Path.Combine(mixed,"face.png"),LibraryDownloadChecks.Png());check(Catalog.Faces(library,default).Any(f=>f.Group=="MixedRace"),"官方新增 MixedRace 分类可索引和浏览，不因缺少国籍绑定而被丢弃");
             var oldDownload=Path.Combine(root,"旧下载盘","NG_Regens_Library");Directory.CreateDirectory(oldDownload);
             check(LibraryPaths.DownloadDirectory(root,state,null,oldDownload)==Path.GetDirectoryName(oldDownload),"程序移动后从已保存的 NG_Regens 图库位置找到旧下载数据");
             check(LibraryPaths.DownloadDirectory(root,state,null,oldDownload+Path.DirectorySeparatorChar)==Path.GetDirectoryName(oldDownload),"旧图库路径带末尾分隔符时仍定位到正确下载目录");
@@ -31,5 +32,13 @@ static class LibrarySelectionChecks
             var customRows=Catalog.Faces(custom,default);Files.Save(Path.Combine(state,"catalog.json"),customRows);check(FaceLibraryStore.Load(default,_=>{},custom).Single().Group=="作者分类","显式 faces.json 作者清单仍支持自定义分类");
         }
         finally{Files.State=original;}
+        foreach(var encoding in new[]{System.Text.Encoding.UTF8,System.Text.Encoding.Unicode,System.Text.Encoding.BigEndianUnicode,System.Text.Encoding.UTF32})
+        {
+            var path=Path.Combine(root,"encoded-"+encoding.CodePage+".json");File.WriteAllText(path,"{\"name\":\"头像目录\"}",encoding);
+            check(Files.Read<Dictionary<string,string>>(path)!["name"]=="头像目录","流式 JSON 兼容既有编码："+encoding.WebName);
+        }
+        var atomic=Path.Combine(root,"stream-atomic.json");Files.Save(atomic,new[]{123});bool failed=false;try{Files.Save(atomic,FailingRows());}catch(IOException){failed=true;}
+        check(failed&&Files.Read<int[]>(atomic)!.Single()==123,"流式序列化失败时保留原可用数据，不提交半份文件");
     }
+    static IEnumerable<int> FailingRows(){yield return 1;throw new IOException("fixture serialization interrupted");}
 }

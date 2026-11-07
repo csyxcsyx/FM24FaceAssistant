@@ -75,7 +75,7 @@ public static class RegionResolver
         Link("PacificIslanders|SEA");
     }
     static void Add(string region,string groups)=>regions[region]=groups.Split('|');
-    public static bool IsKnownGroup(string group)=>regions.Values.Any(groups=>groups.Contains(group,StringComparer.OrdinalIgnoreCase))||countries.Values.Any(country=>country.Groups.Contains(group,StringComparer.OrdinalIgnoreCase));
+    public static bool IsKnownGroup(string group)=>string.Equals(group,"MixedRace",StringComparison.OrdinalIgnoreCase)||regions.Values.Any(groups=>groups.Contains(group,StringComparer.OrdinalIgnoreCase))||countries.Values.Any(country=>country.Groups.Contains(group,StringComparer.OrdinalIgnoreCase));
     static void Map(string region,string groups,string names){foreach(var n in names.Split('|'))countries[n]=(region,groups.Split('|'));}
     static void Link(string names){var groups=names.Split('|');foreach(var group in groups){if(!adjacent.TryGetValue(group,out var targets))adjacent[group]=targets=new(StringComparer.OrdinalIgnoreCase);targets.UnionWith(groups.Where(x=>x!=group));}}
     static (string Region,string[] Groups)? Country(string nation)
