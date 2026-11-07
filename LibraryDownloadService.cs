@@ -18,6 +18,7 @@ namespace FM24FaceAssistant;
 
 public sealed record LibraryDownloadOptions(Uri Source,long ExpectedBytes,int Attempts=8,int RetryDelayMilliseconds=5000,int StallMilliseconds=90000)
 {
+    public int ImageWorkers {get;init;}
     // Zero means discover the current release length from the server, not a pinned old ZIP size.
     public static LibraryDownloadOptions Official {get;}=new(new Uri("https://download.ngregens.org/NG_Regens_MainPack.zip"),0);
 }
@@ -211,24 +212,31 @@ public sealed class LibraryDownloadService
         using var zip=ZipFile.OpenRead(archive);
         var images=zip.Entries.Where(e=>!e.FullName.EndsWith('/')&&new[]{".png",".jpg",".jpeg"}.Contains(Path.GetExtension(e.FullName).ToLowerInvariant())&&Classify(e.FullName).Gender!="excluded").ToList();
         if(images.Count==0)throw new InvalidDataException("压缩包内没有 FM24 可用的头像图片。");
+        var info=new FileInfo(archive);
+        publish(current() with{stage="indexing",total=info.Length,downloaded=info.Length,processed=0,total_images=images.Count,error=null});
         var targets=new HashSet<string>(StringComparer.OrdinalIgnoreCase);long needed=1024L*1024*1024;
-        foreach(var entry in images){var target=SafeTarget(destination,entry.FullName);if(!targets.Add(target))throw new InvalidDataException("图库包含重复或大小写冲突的图片路径。");if(!File.Exists(target)||new FileInfo(target).Length!=entry.Length)needed=checked(needed+entry.Length);}
+        var validatedDirectories=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach(var entry in images){ct.ThrowIfCancellationRequested();var target=SafeTarget(destination,entry.FullName,validatedDirectories);if(!targets.Add(target))throw new InvalidDataException("图库包含重复或大小写冲突的图片路径。");if(!File.Exists(target)||new FileInfo(target).Length!=entry.Length)needed=checked(needed+entry.Length);}
         CheckSpace(assets,needed);
         SQLitePCL.Batteries_V2.Init();using var db=new SqliteConnection(new SqliteConnectionStringBuilder{DataSource=Path.Combine(assets,"native-index-checkpoint.sqlite")}.ToString());db.Open();
         using(var cmd=db.CreateCommand()){cmd.CommandText="CREATE TABLE IF NOT EXISTS images(name TEXT PRIMARY KEY,version TEXT,crc INTEGER,size INTEGER,mtime INTEGER,row_json TEXT)";cmd.ExecuteNonQuery();}
-        var info=new FileInfo(archive);var version=$"native-v1:{info.Length}:{info.LastWriteTimeUtc.Ticks}";var rows=new List<Face>();var pixels=new HashSet<string>();
-        publish(current() with{stage="indexing",total=info.Length,downloaded=info.Length,processed=0,total_images=images.Count,error=null});
+        var version=$"native-v1:{info.Length}:{info.LastWriteTimeUtc.Ticks}";var rows=new List<Face>();var pixels=new HashSet<string>();
+        var databaseGate=new object();var archiveGate=new object();
         var checkpoint=db.BeginTransaction();
         try
         {
-        foreach(var entry in images)
+        // Hand out adjacent entries so slower disks do not seek between distant ZIP regions.
+        var work=System.Collections.Concurrent.Partitioner.Create(images,System.Collections.Concurrent.EnumerablePartitionerOptions.NoBuffering);
+        try{Parallel.ForEach(work,new ParallelOptions{CancellationToken=ct,MaxDegreeOfParallelism=options.ImageWorkers>0?Math.Clamp(options.ImageWorkers,1,4):Math.Clamp(Environment.ProcessorCount/2,1,4)},entry=>
         {
             ct.ThrowIfCancellationRequested();var target=SafeTarget(destination,entry.FullName);Face? face=null;
+            lock(databaseGate){
             using(var cmd=db.CreateCommand())
             {
                 cmd.Transaction=checkpoint;cmd.CommandText="SELECT row_json FROM images WHERE name=$n AND version=$v AND crc=$c AND size=$s AND mtime=$t";
                 cmd.Parameters.AddWithValue("$n",entry.FullName);cmd.Parameters.AddWithValue("$v",version);cmd.Parameters.AddWithValue("$c",entry.Crc32);cmd.Parameters.AddWithValue("$s",entry.Length);cmd.Parameters.AddWithValue("$t",File.Exists(target)?File.GetLastWriteTimeUtc(target).Ticks:-1);
                 if(cmd.ExecuteScalar() is string json&&File.Exists(target)&&new FileInfo(target).Length==entry.Length){try{face=JsonSerializer.Deserialize<Face>(json,Files.Json);if(face?.Path!=target||face.VisualHash==null)face=null;}catch(JsonException){ }}
+            }
             }
             if(face==null)
             {
@@ -236,10 +244,12 @@ public sealed class LibraryDownloadService
                 try
                 {
                     uint crc=0xffffffff;long written=0;
-                    using(var input=entry.Open())using(var output=new FileStream(temporary,FileMode.Create,FileAccess.Write))
+                    // Entry streams share the ZIP's seek position. Only decoding/hash work runs concurrently.
+                    lock(archiveGate){using(var input=entry.Open())using(var output=new FileStream(temporary,FileMode.Create,FileAccess.Write))
                     {
                         var buffer=new byte[65536];int n;while((n=input.Read(buffer,0,buffer.Length))>0){ct.ThrowIfCancellationRequested();written+=n;if(written>entry.Length)throw new InvalidDataException("图片解压大小超过声明值。");crc=LibraryCrc32.Append(crc,buffer.AsSpan(0,n));output.Write(buffer,0,n);}
                         output.Flush(true);
+                    }
                     }
                     if(written!=entry.Length||(crc^0xffffffff)!=entry.Crc32)throw new InvalidDataException("图片 CRC 校验失败："+entry.FullName);
                     var hash=Digest(temporary);var visual=Catalog.PixelDigest(temporary);var c=Classify(entry.FullName);
@@ -248,11 +258,19 @@ public sealed class LibraryDownloadService
                     face=new(target,c.Group,c.Kind,c.Gender,hash,visual);
                 }
                 finally{if(File.Exists(temporary))File.Delete(temporary);}
-                using var cmd=db.CreateCommand();cmd.Transaction=checkpoint;cmd.CommandText="INSERT OR REPLACE INTO images VALUES($n,$v,$c,$s,$t,$r)";
+                lock(databaseGate){using var cmd=db.CreateCommand();cmd.Transaction=checkpoint;cmd.CommandText="INSERT OR REPLACE INTO images VALUES($n,$v,$c,$s,$t,$r)";
                 cmd.Parameters.AddWithValue("$n",entry.FullName);cmd.Parameters.AddWithValue("$v",version);cmd.Parameters.AddWithValue("$c",entry.Crc32);cmd.Parameters.AddWithValue("$s",entry.Length);cmd.Parameters.AddWithValue("$t",File.GetLastWriteTimeUtc(target).Ticks);cmd.Parameters.AddWithValue("$r",JsonSerializer.Serialize(face,Files.Json));cmd.ExecuteNonQuery();
+                }
             }
+            lock(databaseGate){
             rows.Add(face);pixels.Add(face.UniqueKey);
             if(rows.Count%128==0||rows.Count==images.Count){checkpoint.Commit();checkpoint.Dispose();checkpoint=db.BeginTransaction();publish(current() with{stage="indexing",processed=rows.Count,total_images=images.Count,unique_images=pixels.Count});}
+            }
+        });}
+        catch(AggregateException ex)
+        {
+            var failures=ex.Flatten().InnerExceptions;
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failures.FirstOrDefault(e=>e is not OperationCanceledException)??failures[0]).Throw();throw;
         }
             checkpoint.Commit();
         }
@@ -267,14 +285,18 @@ public sealed class LibraryDownloadService
         var generic=new[]{"ng_regens","ngregens","players","player","staff","male","female","men","women","wf"};
         return(dirs.LastOrDefault(d=>!generic.Contains(d.ToLowerInvariant()))??"未分类",kind,kind=="球员"&&gender=="女"?"excluded":gender);
     }
-    public static string SafeTarget(string root,string relative)
+    public static string SafeTarget(string root,string relative)=>SafeTarget(root,relative,null);
+    static string SafeTarget(string root,string relative,HashSet<string>? validatedDirectories)
     {
         root=Path.GetFullPath(root);relative=relative.Replace('\\','/');
         if(Path.IsPathRooted(relative)||relative.Split('/').Any(p=>p==".."||p.Contains(':')||p.EndsWith(' ')||p.EndsWith('.')))throw new InvalidDataException("图库包含越界或无效路径："+relative);
         var target=Path.GetFullPath(Path.Combine(root,relative));
         if(!target.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar)+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("图库路径超出解压目录。");
-        for(var path=target;path!=null&&path.Length>=root.Length;path=Path.GetDirectoryName(path))
+        for(var path=target;path!=null&&path.Length>=root.Length;path=Path.GetDirectoryName(path)){
+            if(path!=target&&validatedDirectories?.Contains(path)==true)break;
             if((File.Exists(path)||Directory.Exists(path))&&(File.GetAttributes(path)&FileAttributes.ReparsePoint)!=0)throw new InvalidDataException("图库目录中存在链接，请选择普通文件夹："+path);
+            if(path!=target)validatedDirectories?.Add(path);
+        }
         return target;
     }
 }

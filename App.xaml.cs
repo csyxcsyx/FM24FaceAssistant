@@ -7,11 +7,15 @@ using System.Windows;
 namespace FM24FaceAssistant;
 public partial class App : Application
 {
+    readonly bool automaticStartup;
+    public App():this(true) { }
+    public App(bool automaticStartup){this.automaticStartup=automaticStartup;}
     Mutex? singleton;
     bool ownsInstance;
     DownloadMonitor? monitor;
     protected override async void OnStartup(StartupEventArgs e)
     {
+        if(!automaticStartup){base.OnStartup(e);ShutdownMode=ShutdownMode.OnExplicitShutdown;return;}
         DesktopRendering.Configure();base.OnStartup(e);ShutdownMode=ShutdownMode.OnExplicitShutdown;
         DispatcherUnhandledException+=(_,args)=>{try{File.AppendAllText(Path.Combine(Files.State,"errors.log"),DateTimeOffset.Now+" "+args.Exception+Environment.NewLine);}catch{} MessageBox.Show("程序遇到异常，错误已记录。请退出后重开；如有未完成写入，下次启动会检查恢复。","头像助手");};
         try

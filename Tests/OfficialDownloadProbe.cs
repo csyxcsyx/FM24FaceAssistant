@@ -12,7 +12,9 @@ static class OfficialDownloadProbe
     {
         sandbox=Path.GetFullPath(sandbox);Directory.CreateDirectory(sandbox);
         var assets=Path.Combine(sandbox,"下载 material");var state=Path.Combine(sandbox,"用户数据;state");
-        var service=new LibraryDownloadService();bool cancelled=false;var watch=Stopwatch.StartNew();long last=-10000;
+        var service=new LibraryDownloadService();var previousLog=Path.Combine(assets,"worker.log");
+        bool cancelled=File.Exists(previousLog)&&(File.ReadAllText(previousLog).Contains("TaskCanceledException")||File.ReadAllText(previousLog).Contains("OperationCanceledException"));
+        bool resumedIndex=File.Exists(Path.Combine(assets,"native-index-checkpoint.sqlite"));var watch=Stopwatch.StartNew();long last=-10000;
         using(var stop=new CancellationTokenSource())
         {
             if(!File.Exists(Path.Combine(assets,"NG_Regens_MainPack.zip")))
@@ -42,7 +44,7 @@ static class OfficialDownloadProbe
             if(records.Length!=persons.Length*2)throw new Exception("Portrait/icon config output incomplete.");
             foreach(var r in records){var from=(string)r.Attribute("from")!;if(!File.Exists(Path.Combine(graphics,"FM24FaceAssistant",from+".png")))throw new Exception("Output portrait missing.");}
             using(var store=new Storage(state)){store.Save("live-official",assignments);if(store.Load("live-official").Count!=persons.Length)throw new Exception("Assignment persistence failed.");}
-            var report=new{Passed=true,CancelledAndResumed=cancelled,ArchiveBytes=new FileInfo(Path.Combine(assets,"NG_Regens_MainPack.zip")).Length,Faces=faces.Count,UniquePixels=faces.Select(f=>f.UniqueKey).Distinct().Count(),UnknownGroups=faces.Where(f=>!RegionResolver.IsKnownGroup(f.Group)).Select(f=>f.Group).Distinct().ToArray(),Matched=assignments.Count,ConfigRecords=records.Length,PeakMiB=Process.GetCurrentProcess().PeakWorkingSet64/1024/1024,ElapsedSeconds=watch.Elapsed.TotalSeconds,Sandbox=sandbox};
+            var report=new{Passed=true,CancelledAndResumed=cancelled,ResumedIndexCheckpoint=resumedIndex,ArchiveBytes=new FileInfo(Path.Combine(assets,"NG_Regens_MainPack.zip")).Length,Faces=faces.Count,UniquePixels=faces.Select(f=>f.UniqueKey).Distinct().Count(),UnknownGroups=faces.Where(f=>!RegionResolver.IsKnownGroup(f.Group)).Select(f=>f.Group).Distinct().ToArray(),Matched=assignments.Count,ConfigRecords=records.Length,PeakMiB=Process.GetCurrentProcess().PeakWorkingSet64/1024/1024,ElapsedSeconds=watch.Elapsed.TotalSeconds,Sandbox=sandbox};
             Files.Save(Path.Combine(sandbox,"verification-result.json"),report);Console.WriteLine(JsonSerializer.Serialize(report));return 0;
         }
         finally{Files.State=original;}

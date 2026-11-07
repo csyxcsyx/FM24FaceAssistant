@@ -15,7 +15,7 @@ static class LibraryDownloadUiProbe
         var stale=Enumerable.Range(0,695).Select(_=>new Face(icon,"icons","球员","男","old-skin-index")).ToList();
         Files.Save(Path.Combine(Files.State,"catalog.json"),stale);Files.Save(Path.Combine(Files.State,"settings.json"),new Settings{Pack=wrong,Documents=Path.Combine(sandbox,"FM docs"),SkipSkinInstallPrompt=true});
         var data=LibraryDownloadChecks.Zip();using var server=new LibraryDownloadChecks.Server(_=>new(data));
-        var app=new App();app.InitializeComponent();app.ShutdownMode=ShutdownMode.OnExplicitShutdown;
+        var app=new App(automaticStartup:false);app.InitializeComponent();app.ShutdownMode=ShutdownMode.OnExplicitShutdown;
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
         var window=new MainWindow(new(new(server.Url,0,2,0,5000)),enableDesktopIntegration:false){Opacity=0,ShowActivated=false,ShowInTaskbar=false};
         bool rendered=false;window.ContentRendered+=(_,_)=>rendered=true;window.Show();
