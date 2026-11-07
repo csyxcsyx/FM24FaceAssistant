@@ -47,12 +47,8 @@ public static class Catalog
         foreach (var path in Directory.EnumerateFiles(root, "*", new EnumerationOptions { RecurseSubdirectories = true, AttributesToSkip = FileAttributes.ReparsePoint }))
         {
             ct.ThrowIfCancellationRequested(); if (!new[] { ".png", ".jpg", ".jpeg" }.Contains(Path.GetExtension(path).ToLowerInvariant())) continue;
-            var dirs = Path.GetRelativePath(root, path).Replace('\\', '/').Split('/'); var lower = string.Join('/', dirs[..^1]).ToLowerInvariant();
-            string kind = lower.Contains("staff") ? "职员" : "球员";
-            string gender = lower.Contains("female") || lower.Contains("women") || dirs[..^1].Any(d=>d.Equals("WF",StringComparison.OrdinalIgnoreCase)) ? "女" : lower.Contains("male") || lower.Contains("men") ? "男" : kind == "球员" ? "男" : "未知";
-            if(kind=="球员" && gender=="女")continue;
-            var group = dirs.Length > 1 ? dirs[^2] : "未分类";
-            if(!RegionResolver.IsKnownGroup(group))continue;
+            var (group,kind,gender)=LibraryDownloadService.Classify(Path.GetRelativePath(root,path));
+            if(gender=="excluded"||!RegionResolver.IsKnownGroup(group))continue;
             list.Add(new(path, group, kind, gender, Digest(path),PixelDigest(path))); if (++count % 500 == 0) progress?.Report($"索引图库：{count:N0} 张");
         }
         if(list.Count==0)throw new IOException("此目录没有可识别的 NG_Regens 头像分类。皮肤、图标和球衣图片不能用作头像图库；请点击“下载 / 接续图库”，或选择解压后的 NG_Regens 文件夹。");

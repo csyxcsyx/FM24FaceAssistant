@@ -19,8 +19,10 @@ static class LibrarySelectionChecks
             check(FaceLibraryStore.Load(default,_=>{},skin).Count==0,"SQLite 热缓存同样排除旧版皮肤图标");
             var library=Path.Combine(root,"分类素材");Directory.CreateDirectory(Path.Combine(library,"China"));Directory.CreateDirectory(Path.Combine(library,"Staff","Female","Korea"));
             File.WriteAllBytes(Path.Combine(library,"China","face.png"),LibraryDownloadChecks.Png());File.WriteAllBytes(Path.Combine(library,"Staff","Female","Korea","face.png"),LibraryDownloadChecks.Png(false,40));
-            var rows=Catalog.Faces(library,default);check(rows.Count==2&&rows.Any(f=>f.Kind=="职员"&&f.Gender=="女"),"已解压的有效地区头像目录仍可手动索引");
-            Files.Save(Path.Combine(state,"catalog.json"),rows);check(FaceLibraryStore.Load(default,_=>{},library).Count==2,"正确图库替换误选目录后可立即加载");
+            foreach(var sex in new[]{"male","female"}){var folder=Path.Combine(library,"Staff","China",sex);Directory.CreateDirectory(folder);File.WriteAllBytes(Path.Combine(folder,"face.png"),LibraryDownloadChecks.Png());}
+            var rows=Catalog.Faces(library,default);check(rows.Count==4&&rows.Any(f=>f.Kind=="职员"&&f.Gender=="女"),"已解压的有效地区头像目录仍可手动索引");
+            check(rows.Count(f=>f.Kind=="职员"&&f.Group=="China"&&f.Gender is "男" or "女")==2,"官方 Staff/地区/性别 目录可手动索引，不把性别文件夹误当作地区");
+            Files.Save(Path.Combine(state,"catalog.json"),rows);check(FaceLibraryStore.Load(default,_=>{},library).Count==4,"正确图库替换误选目录后可立即加载");
             var oldDownload=Path.Combine(root,"旧下载盘","NG_Regens_Library");Directory.CreateDirectory(oldDownload);
             check(LibraryPaths.DownloadDirectory(root,state,null,oldDownload)==Path.GetDirectoryName(oldDownload),"程序移动后从已保存的 NG_Regens 图库位置找到旧下载数据");
             check(LibraryPaths.DownloadDirectory(root,state,null,oldDownload+Path.DirectorySeparatorChar)==Path.GetDirectoryName(oldDownload),"旧图库路径带末尾分隔符时仍定位到正确下载目录");
